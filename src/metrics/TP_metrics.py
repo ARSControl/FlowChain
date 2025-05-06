@@ -15,8 +15,7 @@ class TP_metrics(object):
     def __init__(self, cfg: CfgNode):
         node = 'PEDESTRIAN'
         self.state = hypers[cfg.DATA.TP.PRED_STATE][node]
-        env_path = Path(cfg.DATA.PATH) / cfg.DATA.TASK / \
-            "processed_data" / f"{cfg.DATA.DATASET_NAME}_train.pkl"
+        env_path = Path(cfg.DATA.PATH) / cfg.DATA.TASK / "processed_data" / f"{cfg.DATA.DATASET_NAME}_train.pkl"
         with open(env_path, 'rb') as f:
             self.env = dill.load(f, encoding='latin1')
 

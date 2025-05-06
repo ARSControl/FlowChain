@@ -326,8 +326,8 @@ class Trajectron_encoder(nn.Module):
         from .mgcvae import MultimodalGenerativeCVAE
 
         import dill
-        env_path = Path(cfg.DATA.PATH) / cfg.DATA.TASK / \
-            "processed_data" / f"{cfg.DATA.DATASET_NAME}_train.pkl"
+        env_path = Path(cfg.DATA.PATH) / cfg.DATA.TASK / "processed_data" / f"{cfg.DATA.DATASET_NAME}_train.pkl"
+
         with open(env_path, 'rb') as f:
             env = dill.load(f, encoding='latin1')
             edge_types = env.get_edge_types()

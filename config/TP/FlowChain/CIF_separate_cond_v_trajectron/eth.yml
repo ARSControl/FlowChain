@@ -7,7 +7,11 @@ DATA:
   TP:
     PRED_STATE: 'state_v'
     ACCEPT_NAN: True
+  
+
 
 SOLVER:
   USE_SCHEDULER: True
   WEIGHT_DECAY: 0.0
+  
+  

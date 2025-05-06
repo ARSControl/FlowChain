@@ -137,13 +137,20 @@ class Scene(object):
         :param return_robot: Return a node if it is the robot.
         :return: Dictionary with timesteps as keys and list of nodes as value.
         """
-
         present_nodes = {}
-
         for node in self.nodes:
-            if node.is_robot and not return_robot:
+            # Verifica se il nodo è un dizionario e convertilo in un oggetto compatibile
+            if isinstance(node, dict):
+                node_type = node.get('type', None)
+                is_robot = node.get('is_robot', False)
+            else:
+                node_type = getattr(node, 'type', None)
+                is_robot = getattr(node, 'is_robot', False)
+
+            # Filtra i nodi in base al tipo e al flag 'is_robot'
+            if is_robot and not return_robot:
                 continue
-            if type is None or node.type == type:
+            if type is None or node_type == type:
                 lower_bound = timesteps - min_history_timesteps
                 upper_bound = timesteps + min_future_timesteps
                 mask = (node.first_timestep <= lower_bound) & (upper_bound <= node.last_timestep)
@@ -154,8 +161,8 @@ class Scene(object):
                             present_nodes[timesteps[timestep_index_present]].append(node)
                         else:
                             present_nodes[timesteps[timestep_index_present]] = [node]
-
         return present_nodes
+
 
     def get_nodes_clipped_at_time(self, timesteps, state):
         clipped_nodes = list()

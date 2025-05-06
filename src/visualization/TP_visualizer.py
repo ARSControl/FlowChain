@@ -11,7 +11,7 @@ from torch.distributions.normal import Normal
 
 from visualization.density_plot import plot_density
 from scipy.cluster.hierarchy import linkage, fcluster
-from scipy.interpolate import griddata, RBFInterpolator, interp2d
+from scipy.interpolate import griddata, RBFInterpolator, interp2d, RegularGridInterpolator
 from scipy.stats import multivariate_normal
 
 
@@ -28,18 +28,23 @@ class Visualizer(ABC):
 
 
 class TP_Visualizer(Visualizer):
-    def __init__(self, cfg: CfgNode):
+    def __init__(self, cfg: CfgNode, env=None): # def __init__(self, cfg: CfgNode):  per altri dataset
         self.model_name = cfg.MODEL.TYPE
 
         self.output_dir = Path(cfg.OUTPUT_DIR) / "visualize"
         self.output_dir.mkdir(exist_ok=True)
         self.dataset = cfg.DATA.DATASET_NAME
 
-        import dill
-        env_path = Path(cfg.DATA.PATH) / cfg.DATA.TASK / \
-            "processed_data" / f"{cfg.DATA.DATASET_NAME}_test.pkl"
-        with open(env_path, 'rb') as f:
-            self.env = dill.load(f, encoding='latin1')
+        self.env = env # aggiunto
+
+        
+        if self.env is None:
+            import dill
+            env_path = Path(cfg.DATA.PATH) / cfg.DATA.TASK / \
+                "processed_data" / f"{cfg.DATA.DATASET_NAME}_test.pkl"
+            with open(env_path, 'rb') as f:
+                self.env = dill.load(f, encoding='latin1')
+
 
         # TODO: params for other nodes
         from data.TP.trajectron_dataset import hypers
@@ -58,22 +63,24 @@ class TP_Visualizer(Visualizer):
 
         self.observe_length = cfg.DATA.OBSERVE_LENGTH
 
-    def __call__(self, dict_list: List[Dict]) -> None:
+
+    def __call__(self, dict_list: List[Dict]) -> None: # dict_list è una lista di dizionari
         index = dict_list[0]['index']
         min_pos, max_pos = self.get_minmax(index)
 
         # (batch, timesteps, [x,y])
-        obs = self.to_numpy(dict_list[0]['obs'][:, :, 0:2])
+        obs = self.to_numpy(dict_list[0]['obs'][:, :, 0:2]) # prende x,y dei primi 8 pti
         gt = self.to_numpy(dict_list[0]['gt'])
 
         pred = []
         for d in dict_list:
             pred.append(self.to_numpy(d[("pred", 0)][:, :, None]))
+            #assert verifica che i dati siano consistenti tra i dizionari
             assert np.all(obs == self.to_numpy(d["obs"][:, :, 0:2]))
             assert np.all(gt == self.to_numpy(d["gt"]))
 
         # (batch, timesteps, num_trials, [x,y])
-        pred = np.concatenate(pred, axis=2)
+        pred = np.concatenate(pred, axis=2) # combina predizioni raccolte in unico array
         for i in range(len(obs)):
             self.plot2d_trajectories(obs[i:i+1],
                                      gt[i:i+1],
@@ -90,7 +97,7 @@ class TP_Visualizer(Visualizer):
 
             for k in dict_list[0].keys():
                 if k[0] == "prob":
-                    update_step = k[1]
+                    update_step = k[1] 
                     prob = dict_list[0][k]
 
                     bs, _, timesteps = prob.shape
@@ -105,6 +112,7 @@ class TP_Visualizer(Visualizer):
                     for j in range(timesteps):
                         zz = prob[0, :, j].reshape(xx.shape)
                         zz /= np.max(zz)
+                        print(zz)
                         plot_density(xx, yy, zz, path=path_density_map / f"update{update_step}_{index[i][0]}_{index[i][1]}_{index[i][2].strip('PEDESTRIAN/')}_{j}.png",
                                      traj=[obs[i], gt[i]])
                         zz_list.append(zz)
@@ -115,11 +123,13 @@ class TP_Visualizer(Visualizer):
                                  f"update{update_step}_{index[i][0]}_{index[i][1]}_{index[i][2].strip('PEDESTRIAN/')}_sum.png",
                                  traj=[obs[i], gt[i]])
 
+
     def prob_to_grid(self, dict_list: List[Dict]) -> List:
         if ("prob", 0) in dict_list[0]:
             index = dict_list[0]['index']
             min_pos, max_pos = self.get_minmax(index)
             xx, yy = self.get_grid(index)
+            
 
             for data_dict in dict_list:
                 data_dict["grid"] = [xx, yy]
@@ -133,7 +143,7 @@ class TP_Visualizer(Visualizer):
 
                             zz_batch = []
                             for i in range(batch):
-                                zz_timesteps = Parallel(n_jobs=timesteps)(delayed(self.griddata_on_cluster)(i, prob, xx, yy, max_pos, min_pos, j)
+                                zz_timesteps = Parallel(n_jobs=1)(delayed(self.griddata_on_cluster)(i, prob, xx, yy, max_pos, min_pos, j)
                                                                           for j in range(timesteps))
                                 #zz_timesteps = [self.griddata_on_cluster(i, prob, xx, yy, max_pos, min_pos, j) for j in range(timesteps)]
                                 zz_timesteps = np.stack(
@@ -165,18 +175,71 @@ class TP_Visualizer(Visualizer):
                         if ("gt_traj_log_prob", k[1]) not in data_dict:
                             gt = data_dict["gt"][:, k[1]:].cpu()
                             timesteps = gt.shape[1]
-                            gt_traj_prob = np.array([interp2d(xx, yy, zz_batch[:, :, t])(
-                                gt[:, t, 0], gt[:, t, 1]) for t in range(timesteps)])
+
+                            
+                            gt_traj_prob = np.array([interp2d(xx, yy, zz_batch[:, :, t])(gt[:, t, 0], gt[:, t, 1]) for t in range(timesteps)])
+                            
+                            # gt_traj_prob = []
+                            # for t in range(timesteps):
+                            #     print(f"t: {t}")
+                            #     print(f"zz_batch[:, :, t] shape before reshape: {zz_batch[:, :, t].shape}")
+                                
+                            #     # Rimodella zz_batch[:, :, t] per adattarlo alla griglia
+                            #     zz_batch_t = zz_batch[:, :, t].reshape(len(ys), len(xs))
+                            #     print(f"zz_batch_t shape after reshape: {zz_batch_t.shape}")
+                                
+                            #     # Interpolazione
+                            #     interp_func = interp2d(xx, yy, zz_batch_t)
+                            #     gt_traj_prob.append(interp_func(gt[:, t, 0], gt[:, t, 1]))
+
+                            # gt_traj_prob = np.array(gt_traj_prob)
+                            # print(gt_traj_prob)
+
+
+                            # gt_traj_prob = np.array([
+                            #     RegularGridInterpolator((xs, ys), zz_batch[:, :, t])(  # xx[:, 0], yy[0, :]
+                            #         (gt[:, t, 0], gt[:, t, 1])
+                            #     )
+                            #     for t in range(timesteps)
+                            #     #if print(f"t: {t}, xs: {xs}, ys: {ys}, zz_batch[:, :, t] shape: {zz_batch[:, :, t].shape}, gt[:, t, 0]: {gt[:, t, 0]}, gt[:, t, 1]: {gt[:, t, 1]}")
+                            # ])
+
+                        
+
                             gt_traj_log_prob = torch.log(
                                 torch.Tensor(gt_traj_prob)).squeeze()
                             if torch.sum(torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)) > 0:
-                                mask = torch.isnan(
-                                    gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)
-                                value = torch.min(gt_traj_log_prob[~mask])
-                                gt_traj_log_prob = torch.nan_to_num(
-                                    gt_traj_log_prob, nan=value, neginf=value)
+                                
+                                # mask = torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)
+                                # value = torch.min(gt_traj_log_prob[~mask])
+                                # gt_traj_log_prob = torch.nan_to_num(gt_traj_log_prob, nan=value, neginf=value)
+                                
+                                mask = torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)
+
+                                if torch.sum(~mask) > 0:  # Se ci sono valori validi
+                                    value = torch.min(gt_traj_log_prob[~mask])
+                                else:
+                                    print("Warning: gt_traj_log_prob has only NaN or inf values. Setting default value to 0.")
+                                    value = torch.tensor(0.0)  # Valore neutro o scelto a seconda del tuo caso
+
+                                gt_traj_log_prob = torch.nan_to_num(gt_traj_log_prob, nan=value, neginf=value)
+
+
                             data_dict[("gt_traj_log_prob", k[1])
                                       ] = gt_traj_log_prob[None]
+                            
+
+                            # gt_traj_log_prob = torch.log(torch.Tensor(gt_traj_prob)).squeeze()
+                            # if torch.sum(torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)) > 0:
+                            #     mask = torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)
+                            #     if torch.sum(~mask) > 0:  # Controlla se ci sono valori validi
+                            #         value = torch.min(gt_traj_log_prob[~mask])
+                            #     else:
+                            #         print("Warning: All values in gt_traj_log_prob are NaN or inf. Using default value.")
+                            #         value = torch.tensor(0.0)  # Valore predefinito
+                            #     gt_traj_log_prob = torch.nan_to_num(gt_traj_log_prob, nan=value, neginf=value)
+                            # data_dict[("gt_traj_log_prob", k[1])] = gt_traj_log_prob[None]
+
 
                 if self.gt_dist is not None:  # assume simfork
                     bs, timesteps, d = data_dict["gt"].shape
@@ -202,13 +265,17 @@ class TP_Visualizer(Visualizer):
 
         return dict_list
 
+
     def get_grid(self, index):
         min_pos, max_pos = self.get_minmax(index)
         xs = np.linspace(min_pos[0], max_pos[0], num=self.num_grid)
         ys = np.linspace(min_pos[1], max_pos[1], num=self.num_grid)
+
+
         xx, yy = np.meshgrid(xs, ys)
 
         return xx, yy
+        
 
     def get_minmax(self, index):
         idx = [s.name for s in self.env.scenes].index(index[0][0])
@@ -217,10 +284,17 @@ class TP_Visualizer(Visualizer):
         min_pos -= 0.05 * (max_pos - min_pos)
         return min_pos, max_pos
 
+
     def griddata_on_cluster(self, i, prob, xx, yy, max_pos, min_pos, j):
         prob_ = prob[i, :, j]
         prob_ = prob_[np.where(np.isinf(prob_).sum(axis=1) == 0)]
         prob_ = prob_[np.where(np.isnan(prob_).sum(axis=1) == 0)]
+
+        # Controlla se prob_ è vuoto
+        if prob_.shape[0] == 0:
+            print(f"Warning: prob_ is empty for i={i}, j={j}. Returning zeros.")
+            return np.zeros_like(xx)
+    
         lnk = linkage(prob_[:, :-1],
                       method='single',
                       metric='euclidean')
@@ -249,6 +323,7 @@ class TP_Visualizer(Visualizer):
         prob_ = prob_[~np.isnan(prob_)]
         zz = np.clip(zz, a_min=0.0, a_max=np.percentile(prob_, 95))
         return zz
+
 
     def plot2d_trajectories(self,
                             obs:  np.ndarray,
@@ -283,16 +358,16 @@ class TP_Visualizer(Visualizer):
 
         for j in range(N_seqs):
             sns.lineplot(x=obs[j, :, 0], y=obs[j, :, 1], color='black',
-                         legend='brief', label="obs", marker='o')
+                         legend='brief', label="obs", marker='o', linestyle='None')
             sns.lineplot(x=gt_vis[j, :, 0], y=gt_vis[j, :, 1],
-                         color='blue', legend='brief', label="GT", marker='o')
+                         color='blue', legend='brief', label="GT", marker='o', linestyle='None')
             for i in range(pred.shape[2]):
                 if i == 0:
                     sns.lineplot(x=pred_vis[j, :, i, 0], y=pred_vis[j, :, i, 1],
-                                 color='green', legend='brief', label="pred", marker='o')
+                                 color='green', legend='brief', label="pred", marker='o', linestyle='None')
                 else:
                     sns.lineplot(
-                        x=pred_vis[j, :, i, 0], y=pred_vis[j, :, i, 1], color='green', marker='o')
+                        x=pred_vis[j, :, i, 0], y=pred_vis[j, :, i, 1], color='green', marker='o', linestyle='None')
 
         img_path = self.output_dir / \
             f"{index[0]}_{index[1]}_{index[2].strip('PEDESTRIAN/')}.png"

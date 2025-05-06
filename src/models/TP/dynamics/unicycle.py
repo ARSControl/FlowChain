@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
-from model.dynamics import Dynamic
+from dynamic import Dynamic
 from utils import block_diag
-from model.components import GMM2D
+from single_integrator import GMM2D
 
 
 class Unicycle(Dynamic):

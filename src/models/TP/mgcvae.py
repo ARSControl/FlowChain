@@ -373,11 +373,11 @@ class MultimodalGenerativeCVAE(nn.Module):
                                neighbors,
                                neighbors_edge_value,
                                robot,
-                               map) -> (torch.Tensor,
+                               map) -> tuple[torch.Tensor,
                                           torch.Tensor,
                                           torch.Tensor,
                                           torch.Tensor,
-                                          torch.Tensor):
+                                          torch.Tensor]:
         """
         Encodes input and output tensors for node and robot.
 
@@ -537,6 +537,7 @@ class MultimodalGenerativeCVAE(nn.Module):
                             training=(mode == ModeKeys.TRAIN))  # [bs, max_time, enc_rnn_dim]
 
         last_index_per_sequence = -(first_history_indices + 1)
+        last_index_per_sequence = last_index_per_sequence.long()
 
         return outputs[torch.arange(first_history_indices.shape[0]), last_index_per_sequence]
 
@@ -768,7 +769,7 @@ class MultimodalGenerativeCVAE(nn.Module):
         to_latent = self.node_modules[self.node_type + '/hx_to_z']
         return self.latent.dist_from_h(to_latent(h), mode)
 
-    def project_to_GMM_params(self, tensor) -> (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
+    def project_to_GMM_params(self, tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Projects tensor to parameters of a GMM with N components and D dimensions.
 

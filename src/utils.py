@@ -17,11 +17,16 @@ def load_config(args: argparse.Namespace) -> CfgNode:
     cfg_ = cfg.clone()
     if os.path.isfile(args.config_file):
         conf = args.config_file
+        custom = args.custom_pkl_path
         print(f"Configuration file loaded from {conf}.")
         cfg_.merge_from_file(conf)
-        cfg_.OUTPUT_DIR = os.path.join(cfg_.OUTPUT_DIR,
-                                       os.path.splitext(conf)[0])
-
+        if custom == "src/data/TP/processed_data/mio_cerchio.pkl":
+        #if custom == "src/data/TP/processed_data/mio_" + os.path.splitext(os.path.basename(custom))[0] + ".pkl":
+            cfg_.OUTPUT_DIR = os.path.join(cfg_.OUTPUT_DIR, os.path.splitext(os.path.basename(custom))[0])
+        else:
+            cfg_.OUTPUT_DIR = os.path.join(cfg_.OUTPUT_DIR, os.path.splitext(conf)[0])
+            
+        
     else:
         raise FileNotFoundError
 

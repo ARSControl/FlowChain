@@ -25,7 +25,9 @@ def parse_args() -> argparse.Namespace:
         "--mode", type=str, choices=["train", "test", "tune"], default="train")
     parser.add_argument(
         "--visualize", action="store_true", help="flag for whether visualize the results in mode:test")
-
+    parser.add_argument(
+         "--custom_pkl_path", type=str, default=None, help="path to custom PKL file for testing")
+    
     return parser.parse_args()
 
 
@@ -84,10 +86,12 @@ def train(cfg: CfgNode, save_model=True) -> None:
     return curr_val_loss
 
 
-def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.utils.data.DataLoader, visualize=False):
+def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.utils.data.DataLoader, visualize=False, custom_pkl_path=None):
     model.eval()
     metrics = Build_Metrics(cfg)
-    visualizer = Build_Visualizer(cfg)
+    #visualizer = Build_Visualizer(cfg)
+    visualizer = Build_Visualizer(cfg, env=data_loader.dataset.env)
+
 
     starter = torch.cuda.Event(enable_timing=True)
     ender = torch.cuda.Event(enable_timing=True)
@@ -103,8 +107,14 @@ def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.util
         with torch.no_grad():
             result_list = []
             print("timing the computation, evaluating probability map, and visualizing... ")
+            
+            # data_loader_one_each = unified_loader(
+            #     cfg, rand=False, split="test", batch_size=1)
+
             data_loader_one_each = unified_loader(
-                cfg, rand=False, split="test", batch_size=1)
+                cfg, rand=False, split="test", batch_size=1, custom_pkl_path=custom_pkl_path)
+
+            
             for i, data_dict in enumerate(tqdm(data_loader_one_each, leave=False, total=10)):
                 data_dict = {k: data_dict[k].cuda()
                              if isinstance(data_dict[k], torch.Tensor)
@@ -149,8 +159,13 @@ def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.util
                 if i == 9:
                     break
 
-            result_info.update(aggregate(result_list))
-            print(result_info)
+            if len(result_list) > 0:
+                result_info.update(aggregate(result_list))
+            else:
+                print("Warning: No data loaded in result_list during visualization!")
+
+            #result_info.update(aggregate(result_list))
+            #print(result_info)
 
         print(f"execution time: {np.mean(run_times[0]):.2f} " +
               u"\u00B1" + f"{np.std(run_times[0]):.2f} [ms]")
@@ -176,7 +191,13 @@ def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.util
 
             dict_list = metrics.denormalize(dict_list)
             result_list.append(deepcopy(metrics(dict_list)))
-        d = aggregate(result_list)
+        #aggregate(result_list)
+        if len(result_list) > 0:
+            d = aggregate(result_list)
+            result_info.update({k: d[k] for k in d.keys() if d[k] != 0.0})
+        else:
+            print("Warning: No data loaded in result_list during ADE/FDE evaluation!")
+
         result_info.update({k: d[k] for k in d.keys() if d[k] != 0.0})
 
     np.set_printoptions(precision=4)
@@ -187,6 +208,21 @@ def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.util
     return result_info
 
 
+def test(cfg: CfgNode, visualize, custom_pkl_path=None) -> None:
+    data_loader = unified_loader(cfg, rand=False, split="test", custom_pkl_path=custom_pkl_path)
+    model = Build_Model(cfg)
+    try:
+        model.load()
+    except FileNotFoundError:
+        print("no model saved")
+    result_info = evaluate_model(cfg, model, data_loader, visualize, custom_pkl_path=custom_pkl_path)
+    import json
+    with open(os.path.join(cfg.OUTPUT_DIR, "metrics.json"), "w") as fp:
+        json.dump(result_info, fp)
+
+
+"""
+# ORIGINALE 
 def test(cfg: CfgNode, visualize) -> None:
     data_loader = unified_loader(cfg, rand=False, split="test")
     model = Build_Model(cfg)
@@ -198,6 +234,26 @@ def test(cfg: CfgNode, visualize) -> None:
     import json
     with open(os.path.join(cfg.OUTPUT_DIR, "metrics.json"), "w") as fp:
         json.dump(result_info, fp)
+"""
+
+
+"""
+    custom_pkl_path = "/src/data/TP/processed_data/mio_test.pkl" #Path(cfg.DATA.PATH) / cfg.DATA.TASK / 'processed_data' / "mio_test.pkl"
+
+    data_loader = unified_loader(cfg, rand=False, split="test", custom_pkl_path=custom_pkl_path)
+    model = Build_Model(cfg)
+    try:
+        model.load()
+    except FileNotFoundError:
+        print("no model saved")
+
+    result_info = evaluate_model(cfg, model, data_loader, visualize)
+    import json
+    with open(os.path.join(cfg.OUTPUT_DIR, "metrics.json"), "w") as fp:
+        json.dump(result_info, fp)
+"""
+
+
 
 
 def aggregate(dict_list: List[Dict]) -> Dict:
@@ -209,7 +265,19 @@ def aggregate(dict_list: List[Dict]) -> Dict:
                     for k in dict_list[0].keys()}
 
     return ret_dict
+"""
 
+def aggregate(dict_list: List[Dict]) -> Dict:
+    if not dict_list:
+        raise ValueError("La lista dict_list è vuota. Verifica il caricamento dei dati.")
+    if "nsample" in dict_list[0]:
+        ret_dict = {k: np.sum([d[k] for d in dict_list], axis=0) / np.sum(
+            [d["nsample"] for d in dict_list]) for k in dict_list[0].keys()}
+    else:
+        ret_dict = {k: np.mean([d[k] for d in dict_list], axis=0)
+                    for k in dict_list[0].keys()}
+    return ret_dict
+"""
 
 def tune(cfg: CfgNode) -> None:
     import optuna
@@ -289,7 +357,7 @@ def main() -> None:
     if args.mode == "train":
         train(cfg)
     elif args.mode == "test":
-        test(cfg, args.visualize)
+        test(cfg, args.visualize, custom_pkl_path=args.custom_pkl_path)
     elif args.mode == "tune":
         tune(cfg)
 

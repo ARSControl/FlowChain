@@ -61,7 +61,7 @@ class Node(object):
             self.first_timestep += 1
         self.forward_in_time_on_next_override = forward_in_time_on_next_overwrite
 
-    def scene_ts_to_node_ts(self, scene_ts) -> (np.ndarray, int, int):
+    def scene_ts_to_node_ts(self, scene_ts) -> tuple[np.ndarray, int, int]:
         """
         Transforms timestamp from scene into timeframe of node data.
 
@@ -167,7 +167,7 @@ class MultiNode(Node):
         node_idx = random.choice(possible_node_ranges)[2]
         return self.nodes_list[node_idx]
 
-    def scene_ts_to_node_ts(self, scene_ts) -> (Node, np.ndarray, int, int):
+    def scene_ts_to_node_ts(self, scene_ts) -> tuple[Node, np.ndarray, int, int]:
         """
         Transforms timestamp from scene into timeframe of node data.
 

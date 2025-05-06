@@ -1,7 +1,7 @@
 from torch.utils import data
 import numpy as np
 from data.TP.preprocessing import get_node_timestep_data
-
+from data.TP.environment import Scene
 
 hypers = {
     'state_p': {'PEDESTRIAN': {'position': ['x', 'y']}},
@@ -151,7 +151,10 @@ class NodeTypeDataset(data.Dataset):
                     index += [(scene, t, node)] *\
                              (scene.frequency_multiplier if scene_freq_mult else 1) *\
                              (node.frequency_multiplier if node_freq_mult else 1)
-            
+        
+        new_scene = Scene(timesteps=100, name="traiettoria_singola")
+        self.env.scenes.append(new_scene)
+
         return index
 
     def __len__(self):

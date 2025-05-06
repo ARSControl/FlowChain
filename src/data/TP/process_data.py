@@ -1,12 +1,23 @@
-import sys
-sys.path.append('./src')
-import os
 import numpy as np
 import pandas as pd
 import dill
 import pickle
 
-from data.TP.environment import Environment, Scene, Node, derivative_of
+
+import os
+import sys
+sys.path.append('../src')
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data/TP/environment')))
+print("Current working directory:", os.getcwd())
+from environment import Environment, Scene, Node, derivative_of
+
+# import sys
+# sys.path.append('./src/data/TP')
+# import os
+
+
+
+# from environment import Environment, Scene, Node, derivative_of
 
 np.random.seed(123)
 
@@ -47,6 +58,7 @@ def maybe_makedirs(path_to_create):
     except OSError:
         if not os.path.isdir(path_to_create):
             raise
+
 
 def augment_scene(scene, angle):
     def rotate_pc(pc, alpha):
@@ -95,6 +107,7 @@ def augment(scene):
 nl = 0
 l = 0
 
+
 raw_path = './src/data/TP/raw_data'
 data_folder_name = './src/data/TP/processed_data/'
 
@@ -102,7 +115,7 @@ maybe_makedirs(data_folder_name)
 
 data_columns = pd.MultiIndex.from_product([['position', 'velocity', 'acceleration'], ['x', 'y']])
 
-
+"""
 # Process ETH-UCY
 for desired_source in ['eth', 'hotel', 'univ', 'zara1', 'zara2']:
     for data_class in ['train', 'val', 'test']:
@@ -294,6 +307,7 @@ for data_class in ["train", "test"]:
             dill.dump(env, f, protocol=dill.HIGHEST_PROTOCOL)
 
 
+
 # Process simulated dataset
 for desired_source in ['simline', 'simfork', 'simcross']:
     for data_class in ['train', 'val', 'test']:
@@ -410,3 +424,73 @@ for desired_source in ['simline', 'simfork', 'simcross']:
         if len(scenes) > 0:
             with open(data_dict_path, 'wb') as f:
                 dill.dump(env, f, protocol=dill.HIGHEST_PROTOCOL)
+
+                
+"""
+# MIO
+
+percorso = os.path.join(raw_path, './mio/cerchio.txt')
+                
+scenes = []
+data_dict_path = os.path.join(data_folder_name, 'mio_' + os.path.splitext(os.path.basename(percorso))[0] + '.pkl')
+
+
+env = Environment(node_type_list=['PEDESTRIAN'], standardization=standardization)
+attention_radius = {(env.NodeType.PEDESTRIAN, env.NodeType.PEDESTRIAN): 3.0}
+env.attention_radius = attention_radius
+
+
+data = pd.read_csv(percorso, sep='\t', index_col=False, header=None)
+data.columns = ['frame_id', 'track_id', 'pos_x', 'pos_y']
+data['frame_id'] = pd.to_numeric(data['frame_id'], downcast='integer')
+data['track_id'] = pd.to_numeric(data['track_id'], downcast='integer')
+data['node_type'] = 'PEDESTRIAN'
+data['node_id'] = data['track_id'].astype(str)
+
+
+data.sort_values('frame_id', inplace=True)
+
+max_timesteps = data['frame_id'].max()
+scene = Scene(timesteps=max_timesteps + 1, dt=dt, name='mio')
+
+for node_id in pd.unique(data['node_id']):
+    node_df = data[data['node_id'] == node_id]
+    node_values = node_df[['pos_x', 'pos_y']].values
+
+    if node_values.shape[0] < 2:
+        continue
+
+    new_first_idx = node_df['frame_id'].iloc[0]
+
+    x = node_values[:, 0]
+    y = node_values[:, 1]
+    vx = derivative_of(x, scene.dt)
+    vy = derivative_of(y, scene.dt)
+    ax = derivative_of(vx, scene.dt)
+    ay = derivative_of(vy, scene.dt)
+
+    data_dict = {('position', 'x'): x,
+                 ('position', 'y'): y,
+                 ('velocity', 'x'): vx,
+                 ('velocity', 'y'): vy,
+                 ('acceleration', 'x'): ax,
+                 ('acceleration', 'y'): ay}
+
+    node_data = pd.DataFrame(data_dict, columns=data_columns)
+    node = Node(node_type=env.NodeType.PEDESTRIAN, node_id=node_id, data=node_data)
+    node.first_timestep = new_first_idx
+
+    scene.nodes.append(node)
+
+print(scene)
+scenes.append(scene)
+
+env.scenes = scenes
+
+if len(scenes) > 0:
+    with open(data_dict_path, 'wb') as f:
+        dill.dump(env, f, protocol=dill.HIGHEST_PROTOCOL)
+
+print(f"Traiettoria processata e salvata in '{data_folder_name}'")
+print(data)
+
