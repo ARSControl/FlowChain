@@ -106,9 +106,9 @@ class fastpredNF_TP(nn.Module):
         base_pos = self.get_base_pos(
             data_dict)[:, None].expand(-1, sample_num, -1).clone()
         dist_args = dist_args[:, None].expand(-1, sample_num, -1, -1)
-        sampled_seq, log_prob, seq_ldjs, base_log_prob = self.flow.sample_with_log_prob(
+        sampled_seq, log_prob, seq_ldjs, base_log_prob = self.flow.sample_with_log_prob_mask(
             base_pos, cond=dist_args)
-
+        
         # for update
         self.ldjs_tmp = seq_ldjs
         self.base_prob_normalizer_tmp = base_log_prob.exp().sum(dim=1)
@@ -475,6 +475,22 @@ class fastpredNF(nn.Module):
         base_log_prob = torch.sum(self.base_dist(
             base_pos).log_prob(u), dim=-1)[..., None]
         return sample, base_log_prob + seq_ldjs_cumsum, seq_ldjs, base_log_prob
+
+    def mask_sample(self, sample):
+        x, y = sample[:, :, :, 0], sample[:, :, :, 1]
+        valid = torch.logical_and(x >= -0.5, y >= 0.0)
+        valid = valid.float()
+        return valid
+
+    def sample_with_log_prob_mask(self, base_pos, cond):
+        u = self.base_dist(base_pos).sample()
+        sample, seq_ldjs_cumsum, seq_ldjs = self.inverse(u, cond)
+        base_log_prob = torch.sum(self.base_dist(
+            base_pos).log_prob(u), dim=-1)[..., None]
+        total_log_prob = base_log_prob + seq_ldjs_cumsum
+        mask = self.mask_sample(sample)
+        total_log_prob = total_log_prob * mask + (1 - mask) * -1e-6
+        return sample, total_log_prob, seq_ldjs, base_log_prob
 
 
 class fastpredNF_separate(fastpredNF):
