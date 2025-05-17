@@ -79,9 +79,9 @@ def mirror(points):
 
 
 # 0. parameters
-T = 10
+T = 20
 dt = 0.1
-sim_time = 20.0
+sim_time = 10.0
 NUM_STEPS = int(sim_time / dt)
 # x1 = np.zeros(2)
 # x2 = np.array([2.5, 3.0])
@@ -90,10 +90,14 @@ R = 5.0
 r = R/2
 AREA_W = 10.0
 ROBOTS_NUM = 6
+OBS_NUM = 5       # obstacles
+Ds = 0.5          # safety distance to obstacles
 # points = np.concatenate((x1.reshape(1, -1), x2.reshape(1, -1)),axis=0)
 points = -0.5*AREA_W + AREA_W * np.random.rand(ROBOTS_NUM, 2)
 mean = -0.5*AREA_W + AREA_W * np.random.rand(2)
 cov = 2.0 * np.diag([1.0, 1.0])
+x_obs = -0.5*AREA_W + AREA_W * np.random.rand(OBS_NUM, 2)
+
 
 nx = 2
 nu = 2
@@ -173,22 +177,30 @@ for s in range(NUM_STEPS):
     # 4. Build optimizaiton problem
     obj = 0.0
     x_curr = x0
+    g_list = []
     for k in range(T):
       # print("Planning step: ", k)
       obj += cost_fn(x_curr)
+      
+      # obstacle avoidance constraint: Ds**2 - ||x - x_obs||**2 < 0
+      for obs in x_obs:
+        dist_squared = ca.sumsqr(x_curr - obs)
+        g_list.append(Ds**2 - dist_squared)
+      
       x_curr = dynamics(x_curr, U[:, k])
 
     # print("cost: ", obj)
 
     # 5. Constraints
-    # g = ca.vertcat(*g)
+    g = ca.vertcat(*g_list)
 
     # 7. problem
     opt_vars = ca.vec(U)
     nlp = {
       'x': opt_vars,
       'f': obj,
-      'g': ca.SX.zeros(1),
+      # 'g': ca.SX.zeros(1),
+      'g': g,
       'p': x0
     }
 
@@ -202,10 +214,14 @@ for s in range(NUM_STEPS):
     u_max = np.array([ vmax, vmax])
     lbx = np.tile(u_min, T)
     ubx = np.tile(u_max, T)
+    
+    # bounds on g: g <= 0
+    lbg = -np.inf * np.ones(g.shape)
+    ubg = np.zeros(g.shape)               # Ds**2 - ||x - x_obs||**2 < 0
     u0_guess = np.zeros(opt_vars.shape)
 
     # solve
-    sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, p=x_init)
+    sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=x_init)
     u_opt = sol['x'].full().reshape(T, nu)
     # print("uopt: ", u_opt)
     planned_traj = np.zeros((T+1, nx))
@@ -224,106 +240,15 @@ for s in range(NUM_STEPS):
     ax.plot(planned_trajectories[:, idx, 0], planned_trajectories[:, idx, 1], label='Planned Trajectory', color='tab:green')
     x, y = polygons[idx].exterior.xy
     ax.plot(x, y, c='tab:red')
+  
+  for obs in x_obs:
+    ax.scatter(obs[0], obs[1], marker='x', color='k', label='Obstacle')
+    xc = obs[0] + Ds * np.cos(np.linspace(0, 2*np.pi, 20))
+    yc = obs[1] + Ds * np.sin(np.linspace(0, 2*np.pi, 20))
+    ax.plot(xc, yc, c='k', label='Safety distance')
   # ax.legend()
   plt.pause(0.01)
 
 plt.ioff()
 plt.show()
 
-
-"""
-nx = 2
-nu = 2
-
-# plotting stuff
-xg = np.linspace(0, 10, 100)
-yg = np.linspace(0, 10, 100)
-X, Y = np.meshgrid(xg, yg)
-Z = gauss_pdf(X, Y, mean, covariance)
-plt.ion()  # Turn on interactive mode
-fig, ax = plt.subplots(figsize=(8, 8))
-
-def dynamics(state, ctrl):
-  return state + ctrl * dt
-
-robot = np.zeros(2)
-robot_hist = np.zeros((NUM_STEPS+1, 2))
-robot_hist[0, :] = robot
-for s in range(NUM_STEPS):
-  # 1. Variables
-  U = ca.SX.sym('U', nu, T)
-  x0 = ca.SX.sym('x0', nx)
-
-  # 2. Dynamics: single integrator
-  # f = ca.Function('f', [x, u], [x + u * dt])
-  vmax = 1.5
-  amax = 1.0
-
-  # 3. cost
-  cost_expr = -pdf_func(x0, mean, covariance)
-  cost_fn = ca.Function('cost', [x0], [cost_expr])
-
-  # 4. Build optimizaiton problem
-  g = []
-  obj = 0.0
-  x_curr = x0
-
-  for k in range(T):
-    obj += cost_fn(x_curr)
-    x_curr = dynamics(x_curr, U[:, k])
-
-  # 5. Constraints
-  # g = ca.vertcat(*g)
-
-  # 7. problem
-  opt_vars = ca.vec(U)
-  nlp = {
-    'x': opt_vars,
-    'f': obj,
-    'g': ca.SX.zeros(1),
-    'p': x0
-  }
-  opts = {'ipopt': {'print_level': 0, 'max_iter': 1000, 'tol': 1e-9}}
-  solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
-
-  x_init = robot.copy()
-
-  # 8. bounds and initial guess
-  # lbx = -ca.inf * np.ones(opt_vars.shape)
-  # ubx = ca.inf * np.ones(opt_vars.shape)
-  # lbx[nx*(T+1):] = -vmax
-  # ubx[nx*(T+1):] = vmax
-  u_min = np.array([-vmax, -vmax])
-  u_max = np.array([ vmax, vmax])
-  lbx = np.tile(u_min, T)
-  ubx = np.tile(u_max, T)
-  # lbg = np.zeros(g.shape)
-  # ubg = np.zeros(g.shape)
-  u0_guess = np.zeros(opt_vars.shape)
-
-  # solve
-  sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, p=x_init)
-  u_opt = sol['x'].full().reshape(T, nu)
-  planned_traj = np.zeros((T+1, nx))
-  planned_traj[0, :] = x_init
-  for k in range(T):
-      planned_traj[k+1, :] = dynamics(planned_traj[k, :], u_opt[k, :])
-  
-  # update robot state (apply 1st input)
-  robot = dynamics(robot, u_opt[0, :])
-  robot_hist[s+1, :] = robot
-
-  ax.cla()
-  ax.set_xlim(-1, 10)
-  ax.set_ylim(-1, 10)
-  ax.contourf(X, Y, Z.reshape(X.shape), levels=10, cmap='viridis', alpha=0.5)
-  ax.plot(robot_hist[:s+2, 0], robot_hist[:s+2, 1], label='Robot Trajectory', color='blue')
-  ax.scatter(robot_hist[s+1, 0], robot_hist[s+1, 1], color='blue')
-  ax.plot(planned_traj[:, 0], planned_traj[:, 1], label='Planned Trajectory', color='red')
-  ax.legend()
-  plt.pause(0.01)
-
-plt.ioff()
-plt.show()
-
-"""
