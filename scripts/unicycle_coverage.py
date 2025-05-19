@@ -60,6 +60,16 @@ def control_effort_cost(u, R):
   cost = ca.sum1(costs)
   return cost
 
+def collision_cost(x, x_obs, Ds):
+  """
+  x: state [x, y]
+  x_obs: obstacle state [x, y]
+  Ds: safety distance
+  """
+  dist = ca.sqrt(ca.sum1(x - x_obs)**2)
+  cost = 1 / (dist - Ds)
+  return cost
+
 def mirror(points):
     mirrored_points = []
 
@@ -110,7 +120,7 @@ points = -0.5*AREA_W + AREA_W * np.random.rand(ROBOTS_NUM, nx)
 points[:, 2] = np.random.rand(ROBOTS_NUM) * 2 * np.pi
 # mean = -0.5*AREA_W + AREA_W * np.random.rand(2)
 mean = np.array([0.0, -2.5])
-cov = 5.0 * np.diag([1.0, 1.0])
+cov = 2.0 * np.diag([1.0, 1.0])
 x_obs = -0.5*AREA_W + AREA_W * np.random.rand(OBS_NUM, 2)
 
 
@@ -201,6 +211,7 @@ for s in range(NUM_STEPS):
     # 1. Variables
     U = ca.SX.sym('U', nu, T)
     x0 = ca.SX.sym('x0', nx)
+    obs_sym = ca.SX.sym('obs', 2)
 
     # 2. Dynamics: unicycle
     vmax = 1.5
@@ -212,6 +223,8 @@ for s in range(NUM_STEPS):
     R_u = 0.01 * np.eye(nu)
     u_cost_expr = control_effort_cost(U, R_u)
     u_cost_fn = ca.Function('u_cost', [U], [u_cost_expr])
+    collision_cost_expr = collision_cost(x0[:2], obs_sym, Ds)
+    collision_cost_fn = ca.Function('collision_cost', [x0[:2], obs_sym], [collision_cost_expr])
 
     # print("Cost function: ", cost_fn)
 
@@ -227,7 +240,7 @@ for s in range(NUM_STEPS):
       for obs in x_obs:
         dist_squared = ca.sumsqr(x_curr[:2] - obs)
         g_list.append(Ds**2 - dist_squared)
-      
+        # obj += collision_cost_fn(x_curr[:2], obs)
       x_curr = unicycle_dynamics(x_curr, U[:, k])
 
     # print("cost: ", obj)
