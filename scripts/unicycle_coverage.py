@@ -166,17 +166,17 @@ for s in range(NUM_STEPS):
   planned_trajectories = np.zeros((T+1, ROBOTS_NUM, nx))
   polygons = []
   positions_now = points.copy()
+  # ------- Voronoi partitioning ---------
+  dummy_points = np.zeros((5*ROBOTS_NUM, 2))
+  dummy_points[:ROBOTS_NUM, :] = positions_now[:, :2]
+  mirrored_points = mirror(positions_now[:, :2])
+  mir_pts = np.array(mirrored_points)
+  dummy_points[ROBOTS_NUM:, :] = mir_pts
+
+  # Voronoi partitioning
+  vor = Voronoi(dummy_points)
+  
   for idx in range(ROBOTS_NUM):
-    # ------- Voronoi partitioning ---------
-    dummy_points = np.zeros((5*ROBOTS_NUM, 2))
-    dummy_points[:ROBOTS_NUM, :] = positions_now[:, :2]
-    mirrored_points = mirror(positions_now[:, :2])
-    mir_pts = np.array(mirrored_points)
-    dummy_points[ROBOTS_NUM:, :] = mir_pts
-
-    # Voronoi partitioning
-    vor = Voronoi(dummy_points)
-
     region = vor.point_region[idx]
     poly_vert = []
     for vert in vor.regions[region]:
