@@ -17,7 +17,7 @@ def gauss_pdf(x, y, mean, covariance):
 def pdf_func(x, mean, covariance):
   coeff = 1 / ca.sqrt((2 * ca.pi) ** 2 * ca.det(covariance))
   # exponent = -0.5 * ((x[0] - mean[0])**2 + (x[1] - mean[1])**2)
-  # m = ca.reshape(mean, 2, 1)
+  m = ca.reshape(mean, 1, 2)
   # expanded_mean = ca.repmat(m.T, x.shape[0], 1)
   # exponent = -0.5 * ((x - expanded_mean) @ ca.inv(covariance) @ ((x - expanded_mean)).T)
   mahalanobis_dist = []
@@ -60,14 +60,17 @@ def control_effort_cost(u, R):
   cost = ca.sum1(costs)
   return cost
 
-def collision_cost(x, x_obs, Ds):
+def collision_cost(x, x_obs, Ds, alpha=10.0, beta=5.0):
   """
   x: state [x, y]
   x_obs: obstacle state [x, y]
   Ds: safety distance
   """
-  dist = ca.sqrt(ca.sum1(x - x_obs)**2)
-  cost = 1 / (dist - Ds)
+  # dist = ca.sqrt(ca.sum1(x - x_obs)**2)
+  # cost = 1 / (dist - Ds)
+  dist_sq = ca.sumsqr(x - x_obs)
+  cost = alpha * ca.exp(-beta * (dist_sq - Ds**2))
+
   return cost
 
 def mirror(points):
@@ -98,7 +101,7 @@ def mirror(points):
 
 
 # 0. parameters
-T = 15
+T = 10
 dt = 0.1
 sim_time = 10.0
 NUM_STEPS = int(sim_time / dt)
@@ -119,7 +122,7 @@ nu = 2    # [v, omega]
 points = -0.5*AREA_W + AREA_W * np.random.rand(ROBOTS_NUM, nx)
 points[:, 2] = np.random.rand(ROBOTS_NUM) * 2 * np.pi
 # mean = -0.5*AREA_W + AREA_W * np.random.rand(2)
-mean = np.array([0.0, -2.5])
+mean = np.array([-1.0, 2.5])
 cov = 2.0 * np.diag([1.0, 1.0])
 x_obs = -0.5*AREA_W + AREA_W * np.random.rand(OBS_NUM, 2)
 
@@ -133,6 +136,7 @@ X, Y = np.meshgrid(xg, yg)
 Z = gauss_pdf(X, Y, mean, cov)
 plt.ion()  # Turn on interactive mode
 fig, ax = plt.subplots(figsize=(8, 8))
+
 
 def dynamics(state, ctrl):
   return state + ctrl * dt
@@ -220,7 +224,8 @@ for s in range(NUM_STEPS):
     # 3. cost (coverage + control effort)
     coverage_cost_expr = voronoi_cost_func(x0[:2], qs, mean, cov)
     coverage_cost_fn = ca.Function('voronoi_cost', [x0[:2]], [coverage_cost_expr])
-    R_u = 0.01 * np.eye(nu)
+    # R_u = np.diag([0.01, 0.01])
+    R_u = np.zeros(nu)
     u_cost_expr = control_effort_cost(U, R_u)
     u_cost_fn = ca.Function('u_cost', [U], [u_cost_expr])
     collision_cost_expr = collision_cost(x0[:2], obs_sym, Ds)
@@ -239,8 +244,9 @@ for s in range(NUM_STEPS):
       # obstacle avoidance constraint: Ds**2 - ||x - x_obs||**2 < 0
       for obs in x_obs:
         dist_squared = ca.sumsqr(x_curr[:2] - obs)
-        g_list.append(Ds**2 - dist_squared)
-        # obj += collision_cost_fn(x_curr[:2], obs)
+        # g_list.append(Ds**2 - dist_squared)
+        # g_list.append(Ds - ca.sqrt(dist_squared))
+        obj += collision_cost_fn(x_curr[:2], obs)
       x_curr = unicycle_dynamics(x_curr, U[:, k])
 
     # print("cost: ", obj)
@@ -272,12 +278,13 @@ for s in range(NUM_STEPS):
     # bounds on g: g <= 0
     lbg = -np.inf * np.ones(g.shape)
     ubg = np.zeros(g.shape)               # Ds**2 - ||x - x_obs||**2 < 0
+    # ubg = np.inf * np.ones(g.shape)
     u0_guess = np.zeros(opt_vars.shape)
 
     # solve
     sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=x_init)
     u_opt = sol['x'].full().reshape(T, nu)
-    # print("uopt: ", u_opt)
+    print("uopt: ", u_opt[0])
     planned_traj = np.zeros((T+1, nx))
     planned_traj[0, :] = x_init
     for k in range(T):
