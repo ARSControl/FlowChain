@@ -89,6 +89,7 @@ def getInputFromLinear(vx, vy, theta):
 args = parse_args()
 # MODEL = "unicycle"              # unicycle, single_int, double_int
 MODEL = args.model
+assert MODEL in ["unicycle", "single_int", "double_int"], "Model not supported"
 print("Model: ", MODEL)
 
 # 0. parameters
