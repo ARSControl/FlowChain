@@ -60,14 +60,17 @@ def control_effort_cost(u, R):
   cost = ca.sum1(costs)
   return cost
 
-def collision_cost(x, x_obs, Ds):
+def collision_cost(x, x_obs, Ds, alpha=10.0, beta=5.0):
   """
   x: state [x, y]
   x_obs: obstacle state [x, y]
   Ds: safety distance
   """
-  dist = ca.sqrt(ca.sum1(x - x_obs)**2)
-  cost = 1 / (dist - Ds)
+  # dist = ca.sqrt(ca.sum1(x - x_obs)**2)
+  # cost = 1 / (dist - Ds)
+  dist_sq = ca.sumsqr(x - x_obs)
+  cost = alpha * ca.exp(-beta * (dist_sq - Ds**2))
+
   return cost
 
 def mirror(points):
@@ -210,7 +213,8 @@ for s in range(NUM_STEPS):
     # 3. cost (coverage + control effort)
     coverage_cost_expr = voronoi_cost_func(x0[:2], qs, mean, cov)
     coverage_cost_fn = ca.Function('voronoi_cost', [x0[:2]], [coverage_cost_expr])
-    R_u = 0.01 * np.eye(nu)
+    # R_u = 0.01 * np.eye(nu)
+    R_u = np.zeros(nu)
     u_cost_expr = control_effort_cost(U, R_u)
     u_cost_fn = ca.Function('u_cost', [U], [u_cost_expr])
     collision_cost_expr = collision_cost(x0[:2], obs_sym, Ds)
@@ -229,8 +233,8 @@ for s in range(NUM_STEPS):
       # obstacle avoidance constraint: Ds**2 - ||x - x_obs||**2 < 0
       for obs in x_obs:
         dist_squared = ca.sumsqr(x_curr[:2] - obs)
-        g_list.append(Ds**2 - dist_squared)
-        # obj += collision_cost_fn(x_curr[:2], obs)
+        # g_list.append(Ds**2 - dist_squared)
+        obj += collision_cost_fn(x_curr[:2], obs)
       x_curr = dynamics(x_curr, U[:, k], dt)
 
     # print("cost: ", obj)

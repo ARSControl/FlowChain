@@ -252,6 +252,17 @@ for s in range(NUM_STEPS):
     # print("cost: ", obj)
 
     # 5. Constraints
+    # Position (within env bounds)
+    g_list.append(x_curr[0] - 0.5*AREA_W)
+    g_list.append(x_curr[1] - 0.5*AREA_W)
+    g_list.append(-x_curr[0] - 0.5*AREA_W)
+    g_list.append(-x_curr[1] - 0.5*AREA_W)
+    # Velocity
+    g_list.append(x_curr[2] - vmax)
+    g_list.append(x_curr[3] - vmax)
+    g_list.append(-x_curr[2] - vmax)
+    g_list.append(-x_curr[3] - vmax)
+    # Stack all constraints
     g = ca.vertcat(*g_list)
 
     # 7. problem
