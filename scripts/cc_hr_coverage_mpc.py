@@ -271,7 +271,7 @@ for s in range(NUM_STEPS):
     # ---------------- End Voronoi partitioning ----------------
 
     # 1. Variables
-    U = ca.SX.sym('U', nu, T)
+    U = ca.SX.sym('U', nu+1, T)
     x0 = ca.SX.sym('x0', nx)
     m_var = ca.SX.sym('m', nx)
     c_var = ca.SX.sym('c', nx, nx)
@@ -294,14 +294,27 @@ for s in range(NUM_STEPS):
       human_covs[i, :, :] = (i+1) * 0.5 * np.eye(2) + 0.1 * np.random.rand(2, 2)
     for k in range(T):
       # print("Planning step: ", k)
-      obj += cost_fn(x_curr) + human_cost_fn(x_curr, human_traj[s+k, :2], human_covs[k])
+      obj += cost_fn(x_curr) #+ human_cost_fn(x_curr, human_traj[s+k, :2], human_covs[k])
       
       # obstacle avoidance constraint: Ds**2 - ||x - x_obs||**2 < 0
       for obs in x_obs:
         dist_squared = ca.sumsqr(x_curr - obs)
         g_list.append(Ds**2 - dist_squared)
+
+      # Human avoidance constaint
+      # Probabilistic Collision Checking With Chance Constraints, Du Toit et al. 2011 (T-RO)
+      diff = x_curr - human_traj[s+k, :2]
+      mahalanobis_dist_sq = diff.T @ ca.inv(human_covs[k]) @ diff
+      prob = 0.05  # Desired probability of collision
+      coeff = ca.sqrt(ca.det(2*ca.pi * human_covs[k]))
+      vol = 4/3 * ca.pi * Ds**3
+      g_list.append(2* ca.log(coeff * prob / vol) - mahalanobis_dist_sq + U[2, k])
+      w_k = 100 * (1 - k/T)
+      obj += w_k * U[2, k]**2  # Add the slack variable to the cost
+
+
       
-      x_curr = dynamics(x_curr, U[:, k])
+      x_curr = dynamics(x_curr, U[:nu, k])
 
     # print("cost: ", obj)
 
@@ -329,8 +342,8 @@ for s in range(NUM_STEPS):
     x_init = robot.copy()
 
     # 8. bounds and initial guess
-    u_min = np.array([-vmax, -vmax])
-    u_max = np.array([ vmax, vmax])
+    u_min = np.array([-vmax, -vmax, -np.inf])
+    u_max = np.array([ vmax, vmax, np.inf])
     lbx = np.tile(u_min, T)
     ubx = np.tile(u_max, T)
     
@@ -341,7 +354,9 @@ for s in range(NUM_STEPS):
 
     # solve
     sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=x_init)
-    u_opt = sol['x'].full().reshape(T, nu)
+    u_opt = sol['x'].full().reshape(T, nu+1)
+    u_opt, slack = u_opt[:, :2], u_opt[:, 2]
+    print("Slack variable: ", slack)
     # print("uopt: ", u_opt)
     planned_traj = np.zeros((T+1, nx))
     planned_traj[0, :] = x_init
