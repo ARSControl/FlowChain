@@ -106,7 +106,7 @@ class fastpredNF_TP(nn.Module):
         base_pos = self.get_base_pos(
             data_dict)[:, None].expand(-1, sample_num, -1).clone()
         dist_args = dist_args[:, None].expand(-1, sample_num, -1, -1)
-        sampled_seq, log_prob, seq_ldjs, base_log_prob = self.flow.sample_with_log_prob_mask(
+        sampled_seq, log_prob, seq_ldjs, base_log_prob = self.flow.sample_with_log_prob(
             base_pos, cond=dist_args)
         
         # for update

@@ -115,7 +115,7 @@ def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.util
                 cfg, rand=False, split="test", batch_size=1, custom_pkl_path=custom_pkl_path)
 
             
-            for i, data_dict in enumerate(tqdm(data_loader_one_each, leave=False, total=10)):
+            for i, data_dict in enumerate(tqdm(data_loader_one_each, leave=False, total=200)):
                 data_dict = {k: data_dict[k].cuda()
                              if isinstance(data_dict[k], torch.Tensor)
                              else data_dict[k]
@@ -156,8 +156,8 @@ def evaluate_model(cfg: CfgNode, model: torch.nn.Module, data_loader: torch.util
 
                 if visualize:
                     visualizer(dict_list)
-                if i == 9:
-                    break
+                # if i == 9:
+                #     break
 
             if len(result_list) > 0:
                 result_info.update(aggregate(result_list))
@@ -220,7 +220,6 @@ def test(cfg: CfgNode, visualize, custom_pkl_path=None) -> None:
     with open(os.path.join(cfg.OUTPUT_DIR, "metrics.json"), "w") as fp:
         json.dump(result_info, fp)
 
-
 """
 # ORIGINALE 
 def test(cfg: CfgNode, visualize) -> None:
@@ -237,25 +236,21 @@ def test(cfg: CfgNode, visualize) -> None:
 """
 
 
+    # custom_pkl_path = "/src/data/TP/processed_data/mio_test.pkl" #Path(cfg.DATA.PATH) / cfg.DATA.TASK / 'processed_data' / "mio_test.pkl"
+
+    # data_loader = unified_loader(cfg, rand=False, split="test", custom_pkl_path=custom_pkl_path)
+    # model = Build_Model(cfg)
+    # try:
+    #     model.load()
+    # except FileNotFoundError:
+    #     print("no model saved")
+
+    # result_info = evaluate_model(cfg, model, data_loader, visualize)
+    # import json
+    # with open(os.path.join(cfg.OUTPUT_DIR, "metrics.json"), "w") as fp:
+    #     json.dump(result_info, fp)
+
 """
-    custom_pkl_path = "/src/data/TP/processed_data/mio_test.pkl" #Path(cfg.DATA.PATH) / cfg.DATA.TASK / 'processed_data' / "mio_test.pkl"
-
-    data_loader = unified_loader(cfg, rand=False, split="test", custom_pkl_path=custom_pkl_path)
-    model = Build_Model(cfg)
-    try:
-        model.load()
-    except FileNotFoundError:
-        print("no model saved")
-
-    result_info = evaluate_model(cfg, model, data_loader, visualize)
-    import json
-    with open(os.path.join(cfg.OUTPUT_DIR, "metrics.json"), "w") as fp:
-        json.dump(result_info, fp)
-"""
-
-
-
-
 def aggregate(dict_list: List[Dict]) -> Dict:
     if "nsample" in dict_list[0]:
         ret_dict = {k: np.sum([d[k] for d in dict_list], axis=0) / np.sum(
@@ -277,7 +272,6 @@ def aggregate(dict_list: List[Dict]) -> Dict:
         ret_dict = {k: np.mean([d[k] for d in dict_list], axis=0)
                     for k in dict_list[0].keys()}
     return ret_dict
-"""
 
 def tune(cfg: CfgNode) -> None:
     import optuna
@@ -357,7 +351,9 @@ def main() -> None:
     if args.mode == "train":
         train(cfg)
     elif args.mode == "test":
-        test(cfg, args.visualize, custom_pkl_path=args.custom_pkl_path)
+        # test(cfg, args.visualize)
+        custom_pkl_path = "src/data/TP/processed_data/mio_pedsim0.pkl"
+        test(cfg, args.visualize, custom_pkl_path=custom_pkl_path)
     elif args.mode == "tune":
         tune(cfg)
 

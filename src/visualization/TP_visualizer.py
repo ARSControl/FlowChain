@@ -12,7 +12,29 @@ from torch.distributions.normal import Normal
 from visualization.density_plot import plot_density
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.interpolate import griddata, RBFInterpolator, interp2d, RegularGridInterpolator
+from scipy.interpolate import bisplrep, bisplev
 from scipy.stats import multivariate_normal
+import matplotlib
+
+from sklearn.mixture import GaussianMixture
+
+def gauss_pdf(x, y, mean, covariance):
+
+  points = np.column_stack([x.flatten(), y.flatten()])
+  # Calculate the multivariate Gaussian probability
+  exponent = -0.5 * np.sum((points - mean) @ np.linalg.inv(covariance) * (points - mean), axis=1)
+  coefficient = 1 / np.sqrt((2 * np.pi) ** 2 * np.linalg.det(covariance))
+  prob = coefficient * np.exp(exponent)
+
+  return prob
+
+def gmm_pdf(x, y, means, covariances, weights):
+  prob = 0.0
+  s = len(means)
+  for i in range(s):
+    prob += weights[i] * gauss_pdf(x, y, means[i], covariances[i])
+
+  return prob
 
 
 class Visualizer(ABC):
@@ -109,13 +131,74 @@ class TP_Visualizer(Visualizer):
                     gt = traj[:, self.observe_length + update_step-1:]
 
                     zz_list = []
+                    # n_components = 4
+                    # data = np.zeros((timesteps, n_components, 7))
+                    data = np.zeros((timesteps, 6))
                     for j in range(timesteps):
                         zz = prob[0, :, j].reshape(xx.shape)
+                        total = np.sum(zz)
+                        if total > 1e-12:
+                            pdf = zz / np.sum(zz)
+                        else:
+                            print("[WARNING] pdf sum is 0. Replacing with uniform distribution")
+                            pdf = np.full_like(zz, 1/zz.size)
+                        pdf_flat = pdf.ravel()
+                        pdf_flat /= np.sum(pdf_flat)
                         zz /= np.max(zz)
-                        print(zz)
-                        plot_density(xx, yy, zz, path=path_density_map / f"update{update_step}_{index[i][0]}_{index[i][1]}_{index[i][2].strip('PEDESTRIAN/')}_{j}.png",
-                                     traj=[obs[i], gt[i]])
+                        # print(zz)
+                        
+                        # Get GMM
+                        # pdf = zz / np.sum(zz)
+                        # pdf = zz.clone()
+                        coords = np.array([xx.ravel(), yy.ravel()])
+                        n_samples = 100
+                        # if np.isnan(pdf_flat).any():
+                        #     print("[WARNING]: Found nans in pdf!")
+                        #     pdf_flat = np.nan_to_num(pdf_flat, 0.0)
+                        #     if np.isnan(pdf_flat).any():
+                        #         print("nans still present")
+                            
+                        #     pdf_flat /= np.sum(pdf_flat)
+                        #     if np.isnan(pdf_flat).any():
+                        #         print("[WARNING] Found nans after normalizing")
+                        indices = np.random.choice(len(pdf_flat), n_samples, p=pdf_flat)
+                        samples = coords[:, indices].T
+                        # gmm = GaussianMixture(n_components=n_components, covariance_type='full', max_iter=1000)
+                        # gmm.fit(samples)
+                        
+                        # for c in range(n_components):
+                        #     data[j, c] = np.hstack((gmm.means_[c],
+                        #                          gmm.covariances_[c].flatten(),
+                        #                          gmm.weights_[c]))
+
+                        # 2D gaussian distribution
+                        mean = np.mean(samples, axis=0)
+                        # cov = np.cov(samples, rowvar=False)
+                        if samples.shape[0] < 2:
+                            cov = np.eye(samples.shape[1]) * 1e-3  # Small regularization
+                        else:
+                            cov = np.cov(samples, rowvar=False)
+                            # Regularize if needed
+                            if np.linalg.cond(cov) > 1e12 or np.isnan(cov).any():
+                                print("[WARNING] Covariance is ill-conditioned or NaN, regularizing.")
+                                cov = cov + np.eye(cov.shape[0]) * 1e-3
+                        data[j] = np.hstack((mean, cov.flatten()))
+                        
+
+
+
+                        # fig, ax = plt.subplots()
+                        # Z = gmm_pdf(xx, yy, gmm.means_, gmm.covariances_, gmm.weights_)
+                        # ax.pcolormesh(xx, yy, Z.reshape(xx.shape), shading='auto',
+                        #                cmap=plt.cm.get_cmap("Greens"),
+                        #                norm=matplotlib.colors.Normalize())                        
+                        # plt.show()
+                        # plot_density(xx, yy, zz, path=path_density_map / f"update{update_step}_{index[i][0]}_{index[i][1]}_{index[i][2].strip('PEDESTRIAN/')}_{j}.png",
+                        #              traj=[obs[i], gt[i]])
                         zz_list.append(zz)
+                    filename = f"sq_pdf_{update_step}_{index[i][1]}"
+                    np.save(path_density_map/f'gmms/{filename}.npy', data)
+                    
 
                     zz_sum = sum(zz_list)
                     plot_density(xx, yy, zz_sum,
@@ -177,8 +260,32 @@ class TP_Visualizer(Visualizer):
                             timesteps = gt.shape[1]
 
                             
-                            gt_traj_prob = np.array([interp2d(xx, yy, zz_batch[:, :, t])(gt[:, t, 0], gt[:, t, 1]) for t in range(timesteps)])
-                            
+                            # gt_traj_prob = np.array([interp2d(xx, yy, zz_batch[:, :, t])(gt[:, t, 0], gt[:, t, 1]) for t in range(timesteps)])
+                            x_flat = xx.flatten()
+                            y_flat = yy.flatten()
+                            ny, nx = xx.shape
+                            gt_traj_prob = []
+                            for t in range(timesteps):
+                                z_flat = zz_batch[:, :, t].ravel()
+                                tck = bisplrep(x_flat, y_flat, z_flat, s=0)
+
+                                # Evaluate at all (x, y) pairs in gt[:, t, :]
+                                xq = gt[:, t, 0]
+                                yq = gt[:, t, 1]
+
+                                # Create fine grid for evaluation
+                                x_dense = np.linspace(np.min(xx), np.max(xx), 200)
+                                y_dense = np.linspace(np.min(yy), np.max(yy), 200)
+                                z_dense = bisplev(y_dense, x_dense, tck)
+                                
+                                # Interpolate manually using bilinear interpolation
+                                interp_func = RegularGridInterpolator((y_dense, x_dense), z_dense)
+                                vals = interp_func(np.column_stack((yq, xq)))
+
+                                gt_traj_prob.append(vals)
+                            gt_traj_prob = np.array(gt_traj_prob)
+
+
                             # gt_traj_prob = []
                             # for t in range(timesteps):
                             #     print(f"t: {t}")
@@ -206,8 +313,10 @@ class TP_Visualizer(Visualizer):
 
                         
 
-                            gt_traj_log_prob = torch.log(
-                                torch.Tensor(gt_traj_prob)).squeeze()
+                            # gt_traj_log_prob = torch.log(
+                            #     torch.Tensor(gt_traj_prob)).squeeze()
+                            gt_traj_prob_safe = np.clip(gt_traj_prob, 1e-12, None)
+                            gt_traj_log_prob = torch.log(torch.Tensor(gt_traj_prob_safe)).squeeze()
                             if torch.sum(torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)) > 0:
                                 
                                 # mask = torch.isnan(gt_traj_log_prob) + torch.isinf(gt_traj_log_prob)
