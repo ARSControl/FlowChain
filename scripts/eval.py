@@ -135,110 +135,138 @@ def draw_ellipse(mean, cov, n_std=1, ax=None, edgecolor='tab:blue', facecolor='n
   ax.add_patch(ellipse)
   ax.scatter(mean[0], mean[1], marker='o', color=edgecolor, alpha=alpha)  # mark the center
 
+def dynamics(state, ctrl):
+  px = state[0]
+  py = state[1]
+  vx = state[2]
+  vy = state[3]
+  ax = ctrl[0]
+  ay = ctrl[1]
+  px_dot = vx
+  py_dot = vy
+  vx_dot = ax
+  vy_dot = ay
+  x_dot = ca.vertcat(px_dot, py_dot, vx_dot, vy_dot)
+  return state + x_dot * dt
+
 
 # 0. parameters
-np.random.seed(0)
+np.random.seed(2)
 T = 10
 dt = 0.1
 sim_time = 10.0
 NUM_STEPS = int(sim_time / dt)
-GRAPHICS_ON = True
-NUM_EPISODES = 1
+GRAPHICS_ON = False
+NUM_EPISODES = 10
 # x1 = np.zeros(2)
 # x2 = np.array([2.5, 3.0])
 # mean = np.array([5.0, -2.5])
+nx = 4
+nu = 2
 R = 5.0
 r = R/2
 AREA_W = 10.0
 ROBOTS_NUM = 6
-HUMANS_NUM = 3
+HUMANS_NUM = 9
 OBS_NUM = 5       # obstacles
 Ds = 0.5          # safety distance to obstacles
-# points = np.concatenate((x1.reshape(1, -1), x2.reshape(1, -1)),axis=0)
-points = -0.5*AREA_W + AREA_W * np.random.rand(ROBOTS_NUM, 2)
-# mean = -0.5*AREA_W + AREA_W * np.random.rand(2)
-# cov = 2.0 * np.diag([1.0, 1.0])
-x_obs = -0.5*AREA_W + AREA_W * np.random.rand(OBS_NUM, 2)
-human_traj = np.zeros((NUM_STEPS+T, HUMANS_NUM, 3))
-human_traj[0, :, :2] = -0.5*AREA_W + AREA_W*np.random.rand(HUMANS_NUM, 2)
-# human_traj[0, 2] = 2*np.pi * np.random.rand()  # initial heading
-human_traj[0, :, 2] = 2*np.pi * np.random.rand(HUMANS_NUM)
-# human_covs = np.zeros((NUM_STEPS+T, 2, 2))
-# for i in range(NUM_STEPS+T):
-#   human_covs[i, :, :] = (i%10) * 0.2 * np.eye(2) + 0.1 * np.random.rand(2, 2)
-alpha_human = 0.1
-# Generate human trajectory (straight line bouncing off walls)
-for h in range(HUMANS_NUM):
-  for i in range(1, NUM_STEPS+T):
-    x_prev, y_prev, theta_prev = human_traj[i-1, h]
-    xn = x_prev + 0.1 * np.cos(theta_prev) #+ np.random.normal(0, 0.1)
-    yn = y_prev + 0.1 * np.sin(theta_prev) #+ np.random.normal(0, 0.1)
-    theta_new = theta_prev
-    if xn < -0.5*AREA_W or xn > 0.5*AREA_W:
-      xn = np.clip(xn, -0.5*AREA_W, 0.5*AREA_W)
-      theta_new = np.pi - theta_prev
-    if yn < -0.5*AREA_W or yn > 0.5*AREA_W:
-      yn = np.clip(yn, -0.5*AREA_W, 0.5*AREA_W)
-      theta_new = -theta_new
-    
-    if -0.5*AREA_W < xn < 0.5*AREA_W and -0.5*AREA_W < yn < 0.5*AREA_W:  
-      theta_new += np.random.normal(0, 0.1)
 
-    human_traj[i, h] = [xn, yn, theta_new]
-
-
-# GMM parameters
-COMPONENTS_NUM = 4
-means = -0.5*AREA_W + AREA_W * np.random.rand(COMPONENTS_NUM, 2)
-covariances = []
-for i in range(COMPONENTS_NUM):
-  # cov = 2*np.random.rand(2, 2)
-  # cov = cov @ cov.T  # Ensure positive semi-definite covariance
-  cov = 1.75*np.eye(2) + 0.1 * np.random.rand(2, 2)
-  covariances.append(cov)
-weights = np.random.dirichlet(np.ones(COMPONENTS_NUM))  # Dirichlet distribution makes weights sum to 1
-# print("weights: ", weights)
-
-
-nx = 2
-nu = 2
-
-# plotting stuff
-xg = np.linspace(-0.5*AREA_W, 0.5*AREA_W, 100)
-yg = np.linspace(-0.5*AREA_W, 0.5*AREA_W, 100)
-X, Y = np.meshgrid(xg, yg)
-Z = gmm_pdf(X, Y, means, covariances, weights)
-# plt.figure(figsize=(8, 8))
-# plt.contourf(X, Y, Z.reshape(X.shape), levels=10, cmap='YlOrRd', alpha=0.75)
-# plt.scatter(points[:, 0], points[:, 1], marker='o', color='tab:blue', label='Robots')
-# plt.scatter(x_obs[:, 0], x_obs[:, 1], marker='x', color='k', label='Obstacles')
-# plt.scatter(means[:, 0], means[:, 1], marker='*', color='tab:orange', label='GMM Means')
-# plt.scatter(human_traj[0, 0], human_traj[0, 1], marker='^', color='tab:green', label='Human Start')
-# plt.plot(human_traj[:, 0], human_traj[:, 1], color='tab:green', label='Human Trajectory')
-# plt.xlim(-0.5*AREA_W, 0.5*AREA_W)
-# plt.ylim(-0.5*AREA_W, 0.5*AREA_W)
-# plt.show()
-if GRAPHICS_ON:
-  plt.ion()  # Turn on interactive mode
-  fig, ax = plt.subplots(figsize=(8, 8))
-
-def dynamics(state, ctrl):
-  return state + ctrl * dt
-
-
-eval_path = "output/eval_003.txt"
+eval_path = f"output/eval_{int(HUMANS_NUM/AREA_W**2*100):03d}.txt"
 with open(eval_path, "w") as f:
   f.write("It\tNh\tColl\tA\tH\n")
 collisions = np.zeros(NUM_EPISODES)               # check for collisions with humans / obstacles
 effectiveness = np.zeros(NUM_EPISODES)            # Coverage effectiveness  
 coverage_func = np.zeros(NUM_EPISODES)            # range-unlimited Coverage function 
+
 for ep in range(NUM_EPISODES):
+  x_obs = -0.5*AREA_W + AREA_W * np.random.rand(OBS_NUM, 2)
+  # points = np.concatenate((x1.reshape(1, -1), x2.reshape(1, -1)),axis=0)
+  # points = -0.4*AREA_W + 0.8*AREA_W * np.random.rand(ROBOTS_NUM, nx)
+  # mean = -0.5*AREA_W + AREA_W * np.random.rand(2)
+  # cov = 2.0 * np.diag([1.0, 1.0])
+  human_traj = np.zeros((NUM_STEPS+T, HUMANS_NUM, 3))
+  human_traj[0, :, :2] = -0.5*AREA_W + AREA_W*np.random.rand(HUMANS_NUM, 2)
+  # human_traj[0, 2] = 2*np.pi * np.random.rand()  # initial heading
+  human_traj[0, :, 2] = 2*np.pi * np.random.rand(HUMANS_NUM)
+
+  points = []
+  while len(points) < ROBOTS_NUM:
+      candidate = -0.4 * AREA_W + 0.8 * AREA_W * np.random.rand(1, nx)
+      pos = candidate[0, :2]  # x, y
+
+      obs_dists = np.linalg.norm(x_obs - pos, axis=1)
+      h_dists = np.linalg.norm(human_traj[0, :, :2] - pos, axis=1)
+      if np.all(obs_dists > 3*Ds) and np.all(h_dists > 3*Ds):
+          points.append(candidate[0])
+
+  points = np.array(points)  # shape (ROBOTS_NUM, nx)
+  points[:, 2:] = 0.0
+  # human_covs = np.zeros((NUM_STEPS+T, 2, 2))
+  # for i in range(NUM_STEPS+T):
+  #   human_covs[i, :, :] = (i%10) * 0.2 * np.eye(2) + 0.1 * np.random.rand(2, 2)
+  alpha_human = 0.1
+  # Generate human trajectory (straight line bouncing off walls)
+  for h in range(HUMANS_NUM):
+    for i in range(1, NUM_STEPS+T):
+      x_prev, y_prev, theta_prev = human_traj[i-1, h]
+      xn = x_prev + 0.1 * np.cos(theta_prev) #+ np.random.normal(0, 0.1)
+      yn = y_prev + 0.1 * np.sin(theta_prev) #+ np.random.normal(0, 0.1)
+      theta_new = theta_prev
+      if xn < -0.5*AREA_W or xn > 0.5*AREA_W:
+        xn = np.clip(xn, -0.5*AREA_W, 0.5*AREA_W)
+        theta_new = np.pi - theta_prev
+      if yn < -0.5*AREA_W or yn > 0.5*AREA_W:
+        yn = np.clip(yn, -0.5*AREA_W, 0.5*AREA_W)
+        theta_new = -theta_new
+      
+      if -0.5*AREA_W < xn < 0.5*AREA_W and -0.5*AREA_W < yn < 0.5*AREA_W:  
+        theta_new += np.random.normal(0, 0.1)
+
+      human_traj[i, h] = [xn, yn, theta_new]
+
+
+  # GMM parameters
+  COMPONENTS_NUM = 4
+  means = -0.5*AREA_W + AREA_W * np.random.rand(COMPONENTS_NUM, 2)
+  covariances = []
+  for i in range(COMPONENTS_NUM):
+    # cov = 2*np.random.rand(2, 2)
+    # cov = cov @ cov.T  # Ensure positive semi-definite covariance
+    cov = 1.75*np.eye(2) + 0.1 * np.random.rand(2, 2)
+    covariances.append(cov)
+  weights = np.random.dirichlet(np.ones(COMPONENTS_NUM))  # Dirichlet distribution makes weights sum to 1
+  # print("weights: ", weights)
+
+
+
+
+  # plotting stuff
+  xg = np.linspace(-0.5*AREA_W, 0.5*AREA_W, 100)
+  yg = np.linspace(-0.5*AREA_W, 0.5*AREA_W, 100)
+  X, Y = np.meshgrid(xg, yg)
+  Z = gmm_pdf(X, Y, means, covariances, weights)
+  # plt.figure(figsize=(8, 8))
+  # plt.contourf(X, Y, Z.reshape(X.shape), levels=10, cmap='YlOrRd', alpha=0.75)
+  # plt.scatter(points[:, 0], points[:, 1], marker='o', color='tab:blue', label='Robots')
+  # plt.scatter(x_obs[:, 0], x_obs[:, 1], marker='x', color='k', label='Obstacles')
+  # plt.scatter(means[:, 0], means[:, 1], marker='*', color='tab:orange', label='GMM Means')
+  # plt.scatter(human_traj[0, 0], human_traj[0, 1], marker='^', color='tab:green', label='Human Start')
+  # plt.plot(human_traj[:, 0], human_traj[:, 1], color='tab:green', label='Human Trajectory')
+  # plt.xlim(-0.5*AREA_W, 0.5*AREA_W)
+  # plt.ylim(-0.5*AREA_W, 0.5*AREA_W)
+  # plt.show()
+  if GRAPHICS_ON:
+    plt.ion()  # Turn on interactive mode
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+
+
   robots_hist = np.zeros((NUM_STEPS+1, ROBOTS_NUM, 2))
-  robots_hist[0, :, :] = points
+  robots_hist[0, :, :] = points[:, :2]
   for s in range(NUM_STEPS):
     planned_trajectories = np.zeros((T+1, ROBOTS_NUM, nx))
     polygons = []
-    positions_now = points.copy()
+    positions_now = points[:, :2].copy()
 
     # Check collisions
     diffs = positions_now[:, np.newaxis, :] - x_obs[np.newaxis, :, :]
@@ -300,17 +328,18 @@ for ep in range(NUM_EPISODES):
       # 1. Variables
       U = ca.SX.sym('U', nu+HUMANS_NUM, T)
       x0 = ca.SX.sym('x0', nx)
-      m_var = ca.SX.sym('m', nx)
-      c_var = ca.SX.sym('c', nx, nx)
+      m_var = ca.SX.sym('m', 2)
+      c_var = ca.SX.sym('c', 2, 2)
 
       # 2. Dynamics: single integrator
       vmax = 1.5
+      amax = 5.0
 
       # 3. cost
-      cost_expr = gmm_voronoi_cost_func(x0, qs, means, covariances, weights)
-      cost_fn = ca.Function('cost', [x0], [cost_expr])
-      human_cost_expr = human_cost_func(x0, m_var, c_var, alpha=alpha_human)
-      human_cost_fn = ca.Function('human_cost', [x0, m_var, c_var], [human_cost_expr])
+      cost_expr = gmm_voronoi_cost_func(x0[:2], qs, means, covariances, weights)
+      cost_fn = ca.Function('cost', [x0[:2]], [cost_expr])
+      # human_cost_expr = human_cost_func(x0[:2], m_var, c_var, alpha=alpha_human)
+      # human_cost_fn = ca.Function('human_cost', [x0[:2], m_var, c_var], [human_cost_expr])
 
       # 4. Build optimizaiton problem
       obj = 0.0
@@ -335,18 +364,18 @@ for ep in range(NUM_EPISODES):
           human_covs[h, i, :, :] = np.eye(2) @ human_covs[h, i-1] @ np.eye(2).T + Q
       for k in range(T):
         # print("Planning step: ", k)
-        obj += cost_fn(x_curr) #+ human_cost_fn(x_curr, human_traj[s+k, :2], human_covs[k])
+        obj += cost_fn(x_curr[:2]) #+ human_cost_fn(x_curr, human_traj[s+k, :2], human_covs[k])
         
         # obstacle avoidance constraint: Ds**2 - ||x - x_obs||**2 < 0
         for obs in x_obs:
-          dist_squared = ca.sumsqr(x_curr - obs)
+          dist_squared = ca.sumsqr(x_curr[:2] - obs)
           g_list.append(Ds**2 - dist_squared)
 
         # Human avoidance constaint
         # Probabilistic Collision Checking With Chance Constraints, Du Toit et al. 2011 (T-RO)
         # diff = x_curr - human_traj[s+k, :2]
         for h in range(HUMANS_NUM):
-          diff = x_curr - human_preds[h, k, :2]
+          diff = x_curr[:2] - human_preds[h, k, :2]
           mahalanobis_dist_sq = diff.T @ ca.inv(human_covs[h, k]) @ diff
           prob = 0.01  # Desired probability of collision
           coeff = ca.sqrt(ca.det(2*ca.pi * human_covs[h, k]))
@@ -360,14 +389,18 @@ for ep in range(NUM_EPISODES):
         
         x_curr = dynamics(x_curr, U[:nu, k])
 
-      # print("cost: ", obj)
-
-      # 5. Constraints
-      # Position (within env bounds)
-      g_list.append(x_curr[0] - 0.5*AREA_W)
-      g_list.append(x_curr[1] - 0.5*AREA_W)
-      g_list.append(-x_curr[0] - 0.5*AREA_W)
-      g_list.append(-x_curr[1] - 0.5*AREA_W)
+        # print("cost: ", obj)
+        # 5. Constraints
+        # Position (within env bounds) + vel
+        g_list.append(x_curr[0] - 0.5*AREA_W)
+        g_list.append(x_curr[1] - 0.5*AREA_W)
+        g_list.append(-x_curr[0] - 0.5*AREA_W)
+        g_list.append(-x_curr[1] - 0.5*AREA_W)
+        g_list.append(x_curr[2] - vmax)
+        g_list.append(-x_curr[2] - vmax)
+        g_list.append(x_curr[3] - vmax)
+        g_list.append(-x_curr[3] - vmax)
+      
       g = ca.vertcat(*g_list)
 
       # 7. problem
@@ -383,32 +416,35 @@ for ep in range(NUM_EPISODES):
       opts = {'ipopt': {'print_level': 0, 'sb': 'yes', 'max_iter': 1000, 'tol': 1e-5}, 'print_time': False}
       solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
-      x_init = robot.copy()
+      x_init = points[idx].copy()
 
       # 8. bounds and initial guess
-      u_min = np.concatenate([np.array([-vmax, -vmax]), -np.inf * np.ones(HUMANS_NUM)])
-      u_max = np.concatenate([np.array([vmax, vmax]), np.inf * np.ones(HUMANS_NUM)])
+      u_min = np.concatenate([np.array([-amax, -amax]), -np.inf * np.ones(HUMANS_NUM)])
+      u_max = np.concatenate([np.array([amax, amax]), np.inf * np.ones(HUMANS_NUM)])
       lbx = np.tile(u_min, T)
       ubx = np.tile(u_max, T)
       
       # bounds on g: g <= 0
-      lbg = -np.inf * np.ones(g.shape)
+      lbg= -np.inf * np.ones(g.shape)
       ubg = np.zeros(g.shape)               # Ds**2 - ||x - x_obs||**2 < 0
       u0_guess = np.zeros(opt_vars.shape)
-
       # solve
       sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=x_init)
+      stats = solver.stats()
+      if not stats['success']:
+        print("[IPOPT] Optimization failed with status: ", stats['return_status'])
       u_opt = sol['x'].full().reshape(T, nu+HUMANS_NUM)
       u_opt, slack = u_opt[:, :2], u_opt[:, 2:]
+
       # print("Slack variable: ", slack)
       # print("uopt: ", u_opt)
       planned_traj = np.zeros((T+1, nx))
       planned_traj[0, :] = x_init
       for k in range(T):
-        planned_traj[k+1, :] = dynamics(planned_traj[k, :], u_opt[k, :])
+        planned_traj[k+1, :] = dynamics(planned_traj[k, :], u_opt[k, :]).full().squeeze(1)
       planned_trajectories[:, idx, :] = planned_traj
-      points[idx, :] = dynamics(positions_now[idx, :], u_opt[0, :])
-      robots_hist[s+1, idx, :] = points[idx, :]
+      points[idx, :] = dynamics(x_init, u_opt[0, :]).full().squeeze(1)
+      robots_hist[s+1, idx, :] = points[idx, :2]
     
     if GRAPHICS_ON:
       ax.cla()
