@@ -171,7 +171,7 @@ HUMANS_NUM = 9
 OBS_NUM = 5       # obstacles
 Ds = 0.5          # safety distance to obstacles
 
-eval_path = f"output/eval_{int(HUMANS_NUM/AREA_W**2*100):03d}.txt"
+eval_path = f"results/eval_{int(HUMANS_NUM/AREA_W**2*100):03d}.txt"
 with open(eval_path, "w") as f:
   f.write("It\tNh\tColl\tA\tH\n")
 collisions = np.zeros(NUM_EPISODES)               # check for collisions with humans / obstacles

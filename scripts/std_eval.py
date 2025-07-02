@@ -128,7 +128,7 @@ elif MODEL == "unicycle":
 mod = "di"
 if MODEL == "unicycle":
   mod = "uni"
-eval_path = f"output/std_eval_{int(HUMANS_NUM/AREA_W**2*100):03d}_{mod}.txt"
+eval_path = f"results/std_eval_{int(HUMANS_NUM/AREA_W**2*100):03d}_{mod}.txt"
 with open(eval_path, "w") as f:
   f.write("It\tNh\tColl\tA\tH\n")
 collisions = np.zeros(NUM_EPISODES)               # check for collisions with humans / obstacles
