@@ -166,8 +166,8 @@ human_traj[0, 2] = 0.0
 alpha_human = 0.1
 # Generate human trajectory (straight line bouncing off walls)
 for i in range(1, NUM_STEPS+T):
-  xn = human_traj[i-1, 0] + 0.1 * np.cos(human_traj[i-1, 2])
-  yn = human_traj[i-1, 1] + 0.1 * np.sin(human_traj[i-1, 2])
+  xn = human_traj[i-1, 0] + 0.1 * np.cos(human_traj[i-1, 2]) #+ np.random.normal(0, 0.1)
+  yn = human_traj[i-1, 1] + 0.1 * np.sin(human_traj[i-1, 2]) #+ np.random.normal(0, 0.1)
   if xn < -0.5*AREA_W or xn > 0.5*AREA_W:
     human_traj[i, 0] = np.clip(xn, -0.5*AREA_W, 0.5*AREA_W)
     human_traj[i, 2] = np.pi - human_traj[i-1, 2]  # Reflect heading
@@ -177,13 +177,14 @@ for i in range(1, NUM_STEPS+T):
   else:
     human_traj[i, 0] = xn
     human_traj[i, 1] = yn
-    human_traj[i, 2] = human_traj[i-1, 2]
-  
+    human_traj[i, 2] = human_traj[i-1, 2] + np.random.normal(0, 0.1)
+
     
 
 # GMM parameters
 COMPONENTS_NUM = 4
-means = -0.5*AREA_W + AREA_W * np.random.rand(COMPONENTS_NUM, 2)
+# means = -0.5*AREA_W + AREA_W * np.random.rand(COMPONENTS_NUM, 2)
+means = -0.0*AREA_W + 0.5*AREA_W * np.random.rand(COMPONENTS_NUM, 2)
 covariances = []
 for i in range(COMPONENTS_NUM):
   # cov = 2*np.random.rand(2, 2)
@@ -191,7 +192,7 @@ for i in range(COMPONENTS_NUM):
   cov = 1.75*np.eye(2) + 0.1 * np.random.rand(2, 2)
   covariances.append(cov)
 weights = np.random.dirichlet(np.ones(COMPONENTS_NUM))  # Dirichlet distribution makes weights sum to 1
-print("weights: ", weights)
+# print("weights: ", weights)
 
 
 nx = 2
@@ -217,6 +218,11 @@ fig, ax = plt.subplots(figsize=(8, 8))
 
 def dynamics(state, ctrl):
   return state + ctrl * dt
+  
+wall_obs_num = int(0.6*AREA_W / Ds)*2
+for i in range(wall_obs_num):
+  x_obs = np.concatenate((x_obs, np.expand_dims(np.array([-1.5, -0.5*AREA_W + i*0.5*Ds]), 0)))
+  x_obs = np.concatenate((x_obs, np.expand_dims(np.array([1.5, 0.5*AREA_W - i*0.5*Ds]), 0)))
 
 
 robots_hist = np.zeros((NUM_STEPS+1, ROBOTS_NUM, 2))
@@ -290,8 +296,21 @@ for s in range(NUM_STEPS):
     x_curr = x0
     g_list = []
     human_covs = np.zeros((T, 2, 2))
-    for i in range(T):
-      human_covs[i, :, :] = (i+1) * 0.5 * np.eye(2) + 0.1 * np.random.rand(2, 2)
+    human_preds = np.zeros((T, 3))
+    Q = np.diag([0.1, 0.1, 0.01, 0.01])
+    F = np.eye(4)
+    F[0, 2] = dt
+    F[1, 3] = dt
+    pred_0 = human_traj[s]
+    human_preds[0] = pred_0
+    Q = 0.1 * np.eye(2)
+    human_covs[0] = Q
+    for i in range(1, T):
+      human_preds[i, 0] = human_preds[i-1, 0] + 0.1 * np.cos(human_preds[i-1, 2])
+      human_preds[i, 1] = human_preds[i-1, 1] + 0.1 * np.sin(human_preds[i-1, 2])
+      human_preds[i, 2] = human_preds[i-1, 2]
+      # human_covs[i, :, :] = (i+1) * 0.25 * np.eye(2) + 0.1 * np.random.rand(2, 2)
+      human_covs[i, :, :] = np.eye(2) @ human_covs[i-1] @ np.eye(2).T + Q
     for k in range(T):
       # print("Planning step: ", k)
       obj += cost_fn(x_curr) #+ human_cost_fn(x_curr, human_traj[s+k, :2], human_covs[k])
@@ -303,12 +322,14 @@ for s in range(NUM_STEPS):
 
       # Human avoidance constaint
       # Probabilistic Collision Checking With Chance Constraints, Du Toit et al. 2011 (T-RO)
-      diff = x_curr - human_traj[s+k, :2]
+      # diff = x_curr - human_traj[s+k, :2]
+      diff = x_curr - human_preds[k, :2]
       mahalanobis_dist_sq = diff.T @ ca.inv(human_covs[k]) @ diff
       prob = 0.05  # Desired probability of collision
       coeff = ca.sqrt(ca.det(2*ca.pi * human_covs[k]))
-      vol = 4/3 * ca.pi * Ds**3
-      g_list.append(2* ca.log(coeff * prob / vol) - mahalanobis_dist_sq + U[2, k])
+      # vol = 4/3 * ca.pi * Ds**3
+      vol = ca.pi * Ds**2
+      g_list.append(-2* ca.log(coeff * prob / vol) - mahalanobis_dist_sq + U[2, k])
       w_k = 100 * (1 - k/T)
       obj += w_k * U[2, k]**2  # Add the slack variable to the cost
 
@@ -336,14 +357,14 @@ for s in range(NUM_STEPS):
       'p': x0
     }
 
-    opts = {'ipopt': {'print_level': 0, 'max_iter': 1000, 'tol': 1e-5}}
+    opts = {'ipopt': {'print_level': 0, 'sb': 'yes', 'max_iter': 1000, 'tol': 1e-5}, 'print_time': False}
     solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
 
     x_init = robot.copy()
 
     # 8. bounds and initial guess
-    u_min = np.array([-vmax, -vmax, -np.inf])
-    u_max = np.array([ vmax, vmax, np.inf])
+    u_min = np.array([-vmax, -vmax, 0])
+    u_max = np.array([ vmax, vmax, 0])
     lbx = np.tile(u_min, T)
     ubx = np.tile(u_max, T)
     
@@ -356,7 +377,7 @@ for s in range(NUM_STEPS):
     sol = solver(x0=u0_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=x_init)
     u_opt = sol['x'].full().reshape(T, nu+1)
     u_opt, slack = u_opt[:, :2], u_opt[:, 2]
-    print("Slack variable: ", slack)
+    # print("Slack variable: ", slack)
     # print("uopt: ", u_opt)
     planned_traj = np.zeros((T+1, nx))
     planned_traj[0, :] = x_init
@@ -375,7 +396,8 @@ for s in range(NUM_STEPS):
   ax.scatter(means[:, 0], means[:, 1], marker='*', color='tab:orange', label='GMM Means')
   for t in range(T):
     alpha = np.exp(-np.log(10) * t / T)
-    draw_ellipse(human_traj[s+1+t, :], human_covs[t], n_std=1, ax=ax, alpha=alpha)
+    # draw_ellipse(human_traj[s+1+t, :], human_covs[t], n_std=1, ax=ax, alpha=alpha)
+    draw_ellipse(human_preds[t, :2], human_covs[t], n_std=1, ax=ax, alpha=alpha)
   # ax.contourf(X, Y, alpha_human*human_pdf.reshape(X.shape), levels=10, cmap='Blues', alpha=0.5)
   for idx in range(ROBOTS_NUM):
     ax.plot(robots_hist[:s+2, idx, 0], robots_hist[:s+2, idx, 1], label='Robot Trajectory', color='tab:blue')

@@ -4,6 +4,7 @@ from scipy.spatial import Voronoi
 from shapely import Polygon, Point
 import matplotlib.pyplot as plt
 import argparse
+import matplotlib.patches as patches
 
 
 def parse_args():
@@ -104,17 +105,17 @@ dt = 0.1
 sim_time = 10.0
 NUM_STEPS = int(sim_time / dt)
 NUM_EPISODES = 10
-GRAPHICS_ON = False
-np.random.seed(96)
+GRAPHICS_ON = True
+np.random.seed(2)
 # x1 = np.zeros(2)
 # x2 = np.array([2.5, 3.0])
 # mean = np.array([5.0, -2.5])
 R = 5.0
 r = R/2
 AREA_W = 10.0
-ROBOTS_NUM = 6
+ROBOTS_NUM = 4
 OBS_NUM = 5       # obstacles
-HUMANS_NUM = 9
+HUMANS_NUM = 3
 Ds = 0.5          # safety distance to obstacles
 vmax = 3.0
 
@@ -134,6 +135,8 @@ with open(eval_path, "w") as f:
 collisions = np.zeros(NUM_EPISODES)               # check for collisions with humans / obstacles
 effectiveness = np.zeros(NUM_EPISODES)            # Coverage effectiveness  
 coverage_func = np.zeros(NUM_EPISODES)            # range-unlimited Coverage function 
+coverage_over_time = np.zeros((NUM_EPISODES, NUM_STEPS))
+effectiveness_over_time = np.zeros((NUM_EPISODES, NUM_STEPS))
 
 for ep in range(NUM_EPISODES):
   x_obs = -0.5*AREA_W + AREA_W * np.random.rand(OBS_NUM, 2)
@@ -327,41 +330,110 @@ for ep in range(NUM_EPISODES):
       
     if GRAPHICS_ON:
       ax.cla()
-      ax.contourf(X, Y, Z.reshape(X.shape), levels=10, cmap='YlOrRd', alpha=0.75)
+      ax.pcolormesh(X, Y, Z.reshape(X.shape), cmap='Greys', alpha=0.75)
+      alpha_wall = 1.0
+      lw = 5
+      wall1 = patches.Rectangle((-0.55*AREA_W, -0.55*AREA_W), 0.05*AREA_W, 1.1*AREA_W, facecolor='black', edgecolor='black', alpha=alpha_wall)
+      wall2 = patches.Rectangle((0.5*AREA_W, -0.55*AREA_W), 0.05*AREA_W, 1.1*AREA_W, facecolor='black', edgecolor='black', alpha=alpha_wall)
+      wall3 = patches.Rectangle((-0.55*AREA_W, -0.55*AREA_W), 1.1*AREA_W, 0.05*AREA_W, facecolor='black', edgecolor='black', alpha=alpha_wall)
+      wall4 = patches.Rectangle((-0.55*AREA_W, 0.5*AREA_W), 1.1*AREA_W, 0.05*AREA_W, facecolor='black', edgecolor='black', alpha=alpha_wall)
+      ax.add_patch(wall1)
+      ax.add_patch(wall2)
+      ax.add_patch(wall3)
+      ax.add_patch(wall4)
+      square = patches.Rectangle((-1.5-Ds, -0.5*AREA_W), 2*Ds, 0.5*AREA_W, facecolor='black', edgecolor='black', alpha=alpha_wall)
+      ax.add_patch(square)
+      for obs in x_obs[:OBS_NUM]:
+        # ax.scatter(obs[0], obs[1], marker='x', color='k', label='Obstacle')
+        # xc = obs[0] + Ds * np.cos(np.linspace(0, 2*np.pi, 20))
+        # yc = obs[1] + Ds * np.sin(np.linspace(0, 2*np.pi, 20))
+        # ax.plot(xc, yc, c='k', label='Safety distance')
+        circle = patches.Circle(obs, radius=Ds, color='black')
+        ax.add_patch(circle)
+      # for h in range(HUMANS_NUM):
+        # ax.plot(human_traj[:s+2, h, 0], human_traj[:s+2, h, 1], color='tab:purple', linewidth=lw, label='Human')
+      # ax.scatter(means[:, 0], means[:, 1], marker='*', color='tab:orange', label='GMM Means')
+      # for t in range(T):
+      #   alpha = np.exp(-np.log(10) * t / T)
+        # draw_ellipse(human_traj[s+1+t, :], human_covs[t], n_std=1, ax=ax, alpha=alpha)
       for h in range(HUMANS_NUM):
-        ax.scatter(human_traj[s, h, 0], human_traj[s, h, 1], color='tab:purple', marker="x")
-        th = np.arange(0, 2*np.pi+np.pi/10, np.pi/10)
-        xc = human_traj[s, h, 0] + Ds * np.cos(th)
-        yc = human_traj[s, h, 1] + Ds * np.sin(th)
-        ax.plot(xc, yc, color="tab:purple")
-        ax.plot(human_traj[:s+1, h, 0], human_traj[:s+1, h, 1], color='tab:purple', label='Human Trajectory')
-      for obs in x_obs:
-        ax.scatter(obs[0], obs[1], marker='x', color='k', label='Obstacle')
-        xc = obs[0] + Ds * np.cos(np.linspace(0, 2*np.pi, 20))
-        yc = obs[1] + Ds * np.sin(np.linspace(0, 2*np.pi, 20))
-        ax.plot(xc, yc, c='k', label='Safety distance')
+        ax.scatter(human_traj[s, h, 0], human_traj[s, h, 1], color='tab:purple', s=20*lw)
+        xh = human_traj[s, h, 0] + Ds * np.cos(np.linspace(0, 2*np.pi, 20))
+        yh = human_traj[s, h, 1] + Ds * np.sin(np.linspace(0, 2*np.pi, 20))
+        ax.plot(xh, yh, c='tab:purple', label='Safety distance', linewidth=lw, alpha=0.5)
+          # draw_ellipse(human_preds[h, t, :2], human_covs[h, t], edgecolor='tab:purple', lw=lw, n_std=1, ax=ax, alpha=alpha)
+      # ax.contourf(X, Y, alpha_human*human_pdf.reshape(X.shape), levels=10, cmap='Blues', alpha=0.5)
       for idx in range(ROBOTS_NUM):
-        ax.plot(robots_hist[:s+2, idx, 0], robots_hist[:s+2, idx, 1], label='Robot Trajectory', color='tab:blue')
-        ax.scatter(robots_hist[s+1, idx, 0], robots_hist[s+1, idx, 1], color='tab:blue')
-        if MODEL == "unicycle":
-          # heading
-          xh = points[idx, 0] + 0.5 * np.cos(points[idx, 2])
-          yh = points[idx, 1] + 0.5 * np.sin(points[idx, 2])
-          ax.plot([points[idx, 0], xh], [points[idx, 1], yh], color='tab:orange')
         x, y = polygons[idx].exterior.xy
-        ax.plot(x, y, c='tab:red')
-      
+        ax.plot(x, y, c='tab:red', alpha=0.75, linewidth=lw)
+        # ax.plot(robots_hist[:s+1, idx, 0], robots_hist[:s+1, idx, 1], label='Trajectory', color='tab:blue', linewidth=lw)
+        ax.plot(planned_trajectories[:, idx, 0], planned_trajectories[:, idx, 1], label='Planned Trajectory', linewidth=0.5*lw, color='tab:green')
+        ax.scatter(robots_hist[s, idx, 0], robots_hist[s, idx, 1], color='tab:blue', s=20*lw)
+        
+      # ax.legend()
+      ax.set_xticks([])
+      ax.set_yticks([])
       ax.set_aspect('equal', adjustable='box')   # keeps squares square
       ax.set_autoscale_on(False)                 # stop anything else changing it
-      ax.set_xlim(-0.5*AREA_W, 0.5*AREA_W)
-      ax.set_ylim(-0.5*AREA_W, 0.5*AREA_W)
+      ax.set_xlim(-0.55*AREA_W, 0.55*AREA_W)
+      ax.set_ylim(-0.55*AREA_W, 0.55*AREA_W)
       fig.canvas.draw()
+      # plt.legend()
+      plt.savefig(f"pics/temp/std_eval_{s:03d}.png")
       plt.pause(0.01)
+    
+    # cov_fn = 0.0
+    # ef_num = 0.0
+    # dx = 0.25
+    # for idx in range(ROBOTS_NUM):
+    #   region = vor.point_region[idx]
+    #   poly_vert = []
+    #   for vert in vor.regions[region]:
+    #       v = vor.vertices[vert]
+    #       poly_vert.append(v)
+
+    #   poly = Polygon(poly_vert)
+
+    #   xmin, ymin, xmax, ymax = poly.bounds
+    #   for i in np.arange(xmin, xmax, dx):
+    #       for j in np.arange(ymin, ymax, dx):
+    #           pt_i = Point(i, j)
+    #           if poly.contains(pt_i):
+    #             dist = np.linalg.norm(np.array([i,j]) - positions_now[idx, :2])
+    #             cov_fn -= dist**2 * gmm_pdf(i, j, means, covariances, weights) * dx**2
+      
+    #   # Limited range cell
+    #   range_vert = []
+    #   for th in np.arange(0, 2*np.pi, np.pi/10):
+    #     vx = positions_now[idx, 0] + r * np.cos(th)
+    #     vy = positions_now[idx, 1] + r * np.sin(th)
+    #     range_vert.append((vx, vy))
+    #   range_poly = Polygon(range_vert)
+    #   lim_region = poly.intersection(range_poly)
+    #   polygons.append(lim_region)
+    #   robot = vor.points[idx]
+
+    #   xmin, ymin, xmax, ymax = poly.bounds
+    #   for i in np.arange(xmin, xmax, dx):
+    #       for j in np.arange(ymin, ymax, dx):
+    #           pt_i = Point(i, j)
+    #           if lim_region.contains(pt_i):
+    #             ef_num += gmm_pdf(i, j, means, covariances, weights) * dx**2
+
+    # den = 0.0
+    # for i in np.arange(-0.5*AREA_W, 0.5*AREA_W, dx):
+    #   for j in np.arange(-0.5*AREA_W, 0.5*AREA_W, dx):
+    #     den += gmm_pdf(i, j, means, covariances, weights) * dx**2
+
+    
+    # effectiveness_over_time[ep, s] = (ef_num / den).item()
+    # coverage_over_time[ep, s] = cov_fn.item()
     
   if GRAPHICS_ON:
     plt.ioff()
     plt.show()
 
+    
 
   """
   =======================================
@@ -421,3 +493,8 @@ for ep in range(NUM_EPISODES):
     f.write(f"{ep}\t{HUMANS_NUM}\t{collisions[ep]}\t{effectiveness[ep]}\t{coverage_func[ep]}\n")
 
 
+# with open('results/cov_fn_std.npy', 'wb') as f:
+#   np.save(f, coverage_over_time)
+# with open('results/effect_std.npy', 'wb') as f:
+#   np.save(f, effectiveness_over_time)
+# print("Saved coverage function")
